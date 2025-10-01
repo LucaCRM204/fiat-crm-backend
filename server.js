@@ -6,13 +6,13 @@ const mysql = require('mysql2/promise');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS configurado para múltiples orígenes
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  process.env.CORS_ORIGIN,
-  process.env.FRONTEND_URL
-].filter(Boolean); // Elimina valores undefined
+  'https://fiat-crm-frontend-v5ku.vercel.app',
+  process.env.CORS_ORIGIN ? `https://${process.env.CORS_ORIGIN.replace(/^https?:\/\//, '')}` : null,
+  process.env.FRONTEND_URL ? `https://${process.env.FRONTEND_URL.replace(/^https?:\/\//, '')}` : null
+].filter(Boolean);
 
 app.use(cors({
   origin: function(origin, callback) {
