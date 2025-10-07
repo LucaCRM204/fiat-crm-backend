@@ -5,6 +5,55 @@ const { authMiddleware, checkRole } = require('../middleware/auth');
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
 
+// Función para obtener el siguiente vendedor (Round Robin)
+async function getNextVendedor(db, equipo = 'principal') {
+  try {
+    // Obtener todos los vendedores activos del equipo
+    const [vendedores] = await db.query(`
+      SELECT id, name 
+      FROM users 
+      WHERE role IN ('vendedor', 'owner') 
+      AND active = 1
+      ORDER BY id ASC
+    `);
+
+    if (vendedores.length === 0) {
+      return null; // No hay vendedores disponibles
+    }
+
+    // Obtener el último vendedor asignado
+    const [ultimoLead] = await db.query(`
+      SELECT assigned_to 
+      FROM leads 
+      WHERE assigned_to IS NOT NULL 
+      AND equipo = ?
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `, [equipo]);
+
+    let siguienteVendedor;
+
+    if (ultimoLead.length === 0 || !ultimoLead[0].assigned_to) {
+      // Si no hay leads previos, asignar al primer vendedor
+      siguienteVendedor = vendedores[0];
+    } else {
+      // Encontrar el índice del último vendedor
+      const ultimoVendedorId = ultimoLead[0].assigned_to;
+      const indiceActual = vendedores.findIndex(v => v.id === ultimoVendedorId);
+      
+      // Obtener el siguiente vendedor (circular)
+      const siguienteIndice = (indiceActual + 1) % vendedores.length;
+      siguienteVendedor = vendedores[siguienteIndice];
+    }
+
+    console.log(`🎯 Round Robin: Asignando a ${siguienteVendedor.name} (ID: ${siguienteVendedor.id})`);
+    return siguienteVendedor;
+  } catch (error) {
+    console.error('Error en Round Robin:', error);
+    return null;
+  }
+}
+
 // Listar leads
 router.get('/', async (req, res) => {
   try {
@@ -98,13 +147,35 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // ROUND ROBIN: Si no viene vendedor asignado, asignar automáticamente
+    let vendedorAsignado = vendedor;
+    let nombreVendedor = 'Sin asignar';
+
+    if (!vendedorAsignado) {
+      const siguienteVendedor = await getNextVendedor(req.db, equipo || 'principal');
+      if (siguienteVendedor) {
+        vendedorAsignado = siguienteVendedor.id;
+        nombreVendedor = siguienteVendedor.name;
+        console.log(`🔄 Round Robin activado: Lead asignado a ${nombreVendedor}`);
+      }
+    } else {
+      // Si viene vendedor, obtener su nombre
+      const [vendedorData] = await req.db.query('SELECT name FROM users WHERE id = ?', [vendedorAsignado]);
+      nombreVendedor = vendedorData[0]?.name || 'Sin asignar';
+    }
+
     // Historial inicial
     const historialInicial = JSON.stringify([
       {
         estado: estado || 'nuevo',
         timestamp: new Date().toISOString(),
         usuario: req.user.name
-      }
+      },
+      ...(vendedorAsignado ? [{
+        estado: `Asignado automáticamente a ${nombreVendedor} (Round Robin)`,
+        timestamp: new Date().toISOString(),
+        usuario: 'Sistema'
+      }] : [])
     ]);
 
     const [result] = await req.db.query(
@@ -122,7 +193,7 @@ router.post('/', async (req, res) => {
         estado || 'nuevo',
         fuente || 'otro',
         fecha || new Date().toISOString().split('T')[0],
-        vendedor || null,
+        vendedorAsignado || null,
         equipo || 'principal',
         historialInicial,
         req.user.id
@@ -140,7 +211,7 @@ router.post('/', async (req, res) => {
     
     lead.entrega = Boolean(lead.entrega);
 
-    console.log(`✅ Lead creado: ${nombre} - Vendedor: ${vendedor || 'Sin asignar'}`);
+    console.log(`✅ Lead creado: ${nombre} - Vendedor: ${nombreVendedor} (${fuente})`);
     res.status(201).json(lead);
   } catch (error) {
     console.error('Error al crear lead:', error);

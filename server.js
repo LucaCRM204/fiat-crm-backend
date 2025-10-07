@@ -9,7 +9,8 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://fiat-crm-frontend-v5ku.vercel.app',
+  'https://crm4alluma.com.ar',
+  'https://www.crm4alluma.com.ar',
   process.env.CORS_ORIGIN ? `https://${process.env.CORS_ORIGIN.replace(/^https?:\/\//, '')}` : null,
   process.env.FRONTEND_URL ? `https://${process.env.FRONTEND_URL.replace(/^https?:\/\//, '')}` : null
 ].filter(Boolean);
@@ -147,5 +148,12 @@ process.on('SIGTERM', async () => {
   await pool.end();
   process.exit(0);
 });
+// Iniciar bot de WhatsApp
+const { startBot } = require('./whatsapp-bot/bot');
 
+if (process.env.START_WHATSAPP_BOT === 'true') {
+  startBot().catch(err => {
+    console.error('Error iniciando bot:', err);
+  });
+}
 module.exports = app;

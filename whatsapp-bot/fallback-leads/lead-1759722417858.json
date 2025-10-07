@@ -1,0 +1,12 @@
+{
+  "nombre": "Luca Caorsi prueba",
+  "telefono": "145908914229382@lid",
+  "numeroReal": "5491160477412",
+  "modelo": "TITANO ENDURANCE MT 4X4",
+  "formaPago": "Efectivo",
+  "infoUsado": "",
+  "errorInfo": {
+    "message": "Data truncated for column 'fuente' at row 1",
+    "timestamp": "2025-10-06T03:46:57.858Z"
+  }
+}
