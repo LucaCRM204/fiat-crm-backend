@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, checkRole } = require('../middleware/auth');
+const { generarPresupuestoPDF } = require('../utils/pdfGenerator');
+const fs = require('fs');
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
@@ -14,7 +16,6 @@ router.get('/', async (req, res) => {
       ORDER BY created_at DESC
     `);
     
-    // Parse planes_cuotas JSON
     const presupuestosWithParsedPlanes = presupuestos.map(p => ({
       ...p,
       planes_cuotas: p.planes_cuotas ? JSON.parse(p.planes_cuotas) : null,
@@ -71,7 +72,6 @@ router.post('/', checkRole('owner'), async (req, res) => {
       return res.status(400).json({ error: 'Modelo y marca son requeridos' });
     }
 
-    // Convertir planes_cuotas a JSON string si existe
     const planesJson = planes_cuotas ? JSON.stringify(planes_cuotas) : null;
 
     const [result] = await req.db.query(
@@ -196,142 +196,20 @@ router.delete('/:id', checkRole('owner'), async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar presupuesto' });
   }
 });
+
+// GENERAR PDF PERSONALIZADO
 router.post('/generar-pdf', authMiddleware, async (req, res) => {
   try {
-    const {
-      nombreVehiculo,
-      valorMinimo,
-      anticipo,
-      bonificacionCuota,
-      cuotas,
-      adjudicacion,
-      marcaModelo,
-      anio,
-      kilometros,
-      valorEstimado,
-      observaciones,
-      vendedor,
-      cliente,
-      telefono
-    } = req.body;
-
-    const doc = new PDFDocument({ margin: 50 });
-    const fileName = `presupuesto_${cliente.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
-    const filePath = path.join(__dirname, '../temp', fileName);
+    console.log('📄 Generando PDF con datos:', req.body);
     
-    // Crear carpeta temp si no existe
-    if (!fs.existsSync(path.join(__dirname, '../temp'))) {
-      fs.mkdirSync(path.join(__dirname, '../temp'));
-    }
-
-    const writeStream = fs.createWriteStream(filePath);
-    doc.pipe(writeStream);
-
-    // Header
-    doc.fontSize(24)
-       .fillColor('#D32F2F')
-       .text('PRESUPUESTO', { align: 'center' })
-       .moveDown();
-
-    // Info del cliente
-    doc.fontSize(12)
-       .fillColor('#000000')
-       .text(`Cliente: ${cliente}`, 50, 120)
-       .text(`Teléfono: ${telefono}`, 50, 140)
-       .text(`Vendedor: ${vendedor}`, 50, 160)
-       .text(`Fecha: ${new Date().toLocaleDateString('es-AR')}`, 50, 180)
-       .moveDown();
-
-    doc.moveTo(50, 210).lineTo(550, 210).stroke();
-
-    // Vehículo 0KM
-    doc.fontSize(16)
-       .fillColor('#D32F2F')
-       .text('VEHÍCULO 0KM', 50, 230)
-       .fontSize(12)
-       .fillColor('#000000')
-       .text(`Modelo: ${nombreVehiculo}`, 50, 260)
-       .text(`Valor Móvil: ${valorMinimo}`, 50, 280)
-       .moveDown();
-
-    if (anticipo) {
-      doc.text(`Anticipo: ${anticipo}`, 50, 300);
-    }
-
-    if (bonificacionCuota) {
-      doc.text(`Suscripción y Cuota 1: ${bonificacionCuota}`, 50, 320);
-    }
-
-    // Cuotas
-    if (cuotas && cuotas.length > 0) {
-      let yPos = 340;
-      doc.fontSize(14)
-         .fillColor('#D32F2F')
-         .text('PLAN DE CUOTAS', 50, yPos);
-      
-      yPos += 25;
-      doc.fontSize(12).fillColor('#000000');
-      
-      cuotas.forEach(cuota => {
-        doc.text(`Cuotas ${cuota.cantidad}: ${cuota.valor}`, 50, yPos);
-        yPos += 20;
-      });
-    }
-
-    // Adjudicación
-    if (adjudicacion) {
-      doc.fontSize(12)
-         .fillColor('#000000')
-         .text(`Adjudicación Asegurada: ${adjudicacion}`, 50, doc.y + 20);
-    }
-
-    // Vehículo usado
-    if (marcaModelo) {
-      doc.moveDown(2);
-      doc.fontSize(16)
-         .fillColor('#D32F2F')
-         .text('COTIZACIÓN VEHÍCULO USADO', 50, doc.y)
-         .fontSize(12)
-         .fillColor('#000000')
-         .moveDown();
-      
-      doc.text(`Marca y Modelo: ${marcaModelo}`, 50, doc.y);
-      if (anio) doc.text(`Año: ${anio}`, 50, doc.y + 20);
-      if (kilometros) doc.text(`Kilómetros: ${kilometros}`, 50, doc.y + 40);
-      if (valorEstimado) doc.text(`Valor Estimado: ${valorEstimado}`, 50, doc.y + 60);
-    }
-
-    // Observaciones
-    if (observaciones) {
-      doc.moveDown(2);
-      doc.fontSize(14)
-         .fillColor('#D32F2F')
-         .text('OBSERVACIONES', 50, doc.y)
-         .fontSize(10)
-         .fillColor('#000000')
-         .moveDown()
-         .text(observaciones, 50, doc.y, { width: 500 });
-    }
-
-    // Footer
-    doc.moveDown(3);
-    doc.fontSize(9)
-       .fillColor('#666666')
-       .text('PROMOCIÓN VÁLIDA POR 72HS', 50, doc.y, { align: 'center' })
-       .moveDown(0.5)
-       .text('Las bonificaciones especiales tienen vigencia de 72 horas.', { align: 'center' })
-       .moveDown()
-       .text('Consulte condiciones y requisitos con su vendedor.', { align: 'center' });
-
-    doc.end();
-
-    writeStream.on('finish', () => {
-      res.download(filePath, fileName, (err) => {
-        if (err) {
-          console.error('Error al enviar PDF:', err);
-        }
-        fs.unlinkSync(filePath);
-      });
+    const filePath = await generarPresupuestoPDF(req.body);
+    
+    res.download(filePath, `presupuesto_${req.body.cliente}_${Date.now()}.pdf`, (err) => {
+      if (err) {
+        console.error('Error al enviar PDF:', err);
+      }
+      // Eliminar archivo temporal después de enviar
+      fs.unlinkSync(filePath);
     });
 
   } catch (error) {
