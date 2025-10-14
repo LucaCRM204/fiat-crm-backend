@@ -2,239 +2,242 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Genera un PDF de presupuesto con formato profesional
+ * @param {Object} data - Datos del presupuesto
+ * @returns {Promise<string>} - Ruta del archivo PDF generado
+ */
 async function generarPresupuestoPDF(data) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ 
-        margin: 50,
-        size: 'A4'
-      });
-      
-      const fileName = `presupuesto_${data.cliente.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+      // Crear directorio temporal si no existe
       const tempDir = path.join(__dirname, '../temp');
-      
-      // Crear carpeta temp si no existe
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
-      
+
+      // Ruta del archivo temporal
+      const fileName = `presupuesto_${Date.now()}.pdf`;
       const filePath = path.join(tempDir, fileName);
-      const writeStream = fs.createWriteStream(filePath);
-      doc.pipe(writeStream);
 
-      // === HEADER ===
-      doc.fontSize(28)
-         .fillColor('#D32F2F')
-         .font('Helvetica-Bold')
-         .text('PRESUPUESTO', { align: 'center' })
-         .moveDown(0.5);
+      // Crear documento PDF
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, bottom: 50, left: 50, right: 50 },
+        info: {
+          Title: `Presupuesto - ${data.cliente}`,
+          Author: 'Sistema de Gestión',
+          Subject: 'Presupuesto de Vehículo'
+        }
+      });
 
+      // Stream para escribir el archivo
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+
+      // ENCABEZADO
+      doc.fontSize(24)
+         .fillColor('#2563eb')
+         .text('PRESUPUESTO', { align: 'center' });
+
+      doc.moveDown(0.5);
       doc.fontSize(10)
          .fillColor('#666666')
-         .font('Helvetica')
-         .text('GRUPO ALRA - FIAT', { align: 'center' })
-         .moveDown(2);
+         .text(`Fecha: ${data.fecha || new Date().toLocaleDateString('es-AR')}`, { align: 'center' });
+      
+      if (data.vendedor) {
+        doc.text(`Vendedor: ${data.vendedor}`, { align: 'center' });
+      }
 
-      // === INFO DEL CLIENTE ===
-      doc.fontSize(10)
-         .fillColor('#000000')
-         .font('Helvetica');
+      doc.moveDown(1.5);
 
-      const infoY = doc.y;
-      doc.text(`Cliente: ${data.cliente}`, 50, infoY)
-         .text(`Teléfono: ${data.telefono}`, 50, infoY + 15)
-         .text(`Vendedor: ${data.vendedor}`, 300, infoY)
-         .text(`Fecha: ${new Date().toLocaleDateString('es-AR')}`, 300, infoY + 15);
-
-      doc.moveDown(2);
-
-      // Línea separadora
-      doc.moveTo(50, doc.y)
-         .lineTo(550, doc.y)
-         .strokeColor('#D32F2F')
+      // LÍNEA SEPARADORA
+      doc.strokeColor('#2563eb')
          .lineWidth(2)
+         .moveTo(50, doc.y)
+         .lineTo(545, doc.y)
          .stroke();
 
       doc.moveDown(1);
 
-      // === VEHÍCULO 0KM ===
-      doc.fontSize(16)
-         .fillColor('#D32F2F')
-         .font('Helvetica-Bold')
-         .text('🚗 VEHÍCULO 0KM', 50, doc.y)
-         .moveDown(0.5);
+      // INFORMACIÓN DEL CLIENTE
+      doc.fontSize(14)
+         .fillColor('#1e40af')
+         .text('DATOS DEL CLIENTE', { underline: true });
+      
+      doc.moveDown(0.5);
+      doc.fontSize(11)
+         .fillColor('#000000')
+         .text(`Cliente: ${data.cliente || 'No especificado'}`, { continued: false });
 
+      doc.moveDown(1.5);
+
+      // INFORMACIÓN DEL VEHÍCULO
+      doc.fontSize(14)
+         .fillColor('#1e40af')
+         .text('VEHÍCULO', { underline: true });
+      
+      doc.moveDown(0.5);
       doc.fontSize(12)
          .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text(`Modelo: ${data.nombreVehiculo}`, 50, doc.y)
-         .moveDown(0.3);
-
-      doc.fontSize(14)
-         .fillColor('#27AE60')
-         .font('Helvetica-Bold')
-         .text(`Valor Móvil: ${data.valorMinimo}`, 50, doc.y)
-         .moveDown(1);
-
-      // Anticipo
-      if (data.anticipo) {
+         .text(`${data.vehiculo?.marca || ''} ${data.vehiculo?.modelo || ''}`, { bold: true });
+      
+      if (data.vehiculo?.año) {
         doc.fontSize(11)
-           .fillColor('#000000')
-           .font('Helvetica')
-           .text(`💰 Anticipo / Alicuota Extraordinaria: ${data.anticipo}`, 50, doc.y)
-           .moveDown(0.5);
+           .fillColor('#666666')
+           .text(`Año: ${data.vehiculo.año}`);
       }
 
-      // Cuota 1
-      if (data.bonificacionCuota) {
-        doc.fontSize(11)
-           .fillColor('#2980B9')
-           .font('Helvetica-Bold')
-           .text(`✨ Suscripción y Cuota 1: ${data.bonificacionCuota}`, 50, doc.y)
-           .moveDown(0.5);
-      }
+      doc.moveDown(1.5);
 
-      // === PLAN DE CUOTAS ===
-      if (data.cuotas && data.cuotas.length > 0) {
-        doc.moveDown(0.5);
+      // FINANCIACIÓN
+      if (data.financiacion) {
         doc.fontSize(14)
-           .fillColor('#D32F2F')
-           .font('Helvetica-Bold')
-           .text('💳 PLAN DE CUOTAS', 50, doc.y)
-           .moveDown(0.5);
+           .fillColor('#1e40af')
+           .text('FINANCIACIÓN EXCLUSIVA', { underline: true });
         
-        doc.fontSize(11)
-           .fillColor('#000000')
-           .font('Helvetica');
-        
-        data.cuotas.forEach(cuota => {
-          doc.text(`   • Cuotas ${cuota.cantidad}: ${cuota.valor}`, 50, doc.y)
-             .moveDown(0.3);
-        });
-      }
-
-      // Adjudicación
-      if (data.adjudicacion) {
         doc.moveDown(0.5);
-        doc.fontSize(11)
-           .fillColor('#E67E22')
-           .font('Helvetica-Bold')
-           .text(`🎯 Adjudicación Asegurada: ${data.adjudicacion}`, 50, doc.y)
-           .moveDown(1);
+
+        // Precio de contado
+        if (data.financiacion.precio_contado) {
+          doc.fontSize(11)
+             .fillColor('#000000')
+             .text(`Valor de Mercado: ${data.financiacion.precio_contado}`);
+          doc.moveDown(0.3);
+        }
+
+        // Anticipo
+        if (data.financiacion.anticipo) {
+          doc.fontSize(11)
+             .fillColor('#000000')
+             .text(`Anticipo / Mínimo Extraordinario: ${data.financiacion.anticipo}`);
+          doc.moveDown(0.3);
+        }
+
+        // Bonificaciones
+        if (data.financiacion.bonificaciones) {
+          doc.fontSize(11)
+             .fillColor('#16a34a')
+             .text(`Bonificación y Cuota 0: ${data.financiacion.bonificaciones}`);
+          doc.moveDown(0.5);
+        }
+
+        // Planes de cuotas
+        if (data.financiacion.planes_cuotas) {
+          doc.moveDown(0.5);
+          doc.fontSize(12)
+             .fillColor('#1e40af')
+             .text('Planes de Pago:', { underline: true });
+          
+          doc.moveDown(0.3);
+
+          const planes = data.financiacion.planes_cuotas;
+          
+          if (planes.cuota_2_12) {
+            doc.fontSize(11)
+               .fillColor('#000000')
+               .text(`Cuota 2 a la 12: ${planes.cuota_2_12}`);
+          }
+          
+          if (planes.cuota_13_84) {
+            doc.fontSize(11)
+               .fillColor('#000000')
+               .text(`Cuota 13 a la 84: ${planes.cuota_13_84}`);
+          }
+          
+          if (planes.ajuste_asumido) {
+            doc.fontSize(10)
+               .fillColor('#666666')
+               .text(`Adjudicación Asumida: ${planes.ajuste_asumido}`);
+          }
+        }
+
+        doc.moveDown(1.5);
       }
 
-      // === VEHÍCULO USADO ===
-      if (data.marcaModelo) {
-        doc.moveDown(1);
-        
-        // Línea separadora
-        doc.moveTo(50, doc.y)
-           .lineTo(550, doc.y)
-           .strokeColor('#CCCCCC')
-           .lineWidth(1)
-           .stroke();
-        
-        doc.moveDown(1);
-        
-        doc.fontSize(16)
-           .fillColor('#8E44AD')
-           .font('Helvetica-Bold')
-           .text('🔄 COTIZACIÓN VEHÍCULO USADO', 50, doc.y)
-           .moveDown(0.5);
-        
-        doc.fontSize(12)
-           .fillColor('#000000')
-           .font('Helvetica');
-        
-        doc.text(`Marca y Modelo: ${data.marcaModelo}`, 50, doc.y)
-           .moveDown(0.3);
-        
-        if (data.anio) {
-          doc.text(`Año: ${data.anio}`, 50, doc.y)
-             .moveDown(0.3);
-        }
-        
-        if (data.kilometros) {
-          doc.text(`Kilómetros: ${data.kilometros}`, 50, doc.y)
-             .moveDown(0.3);
-        }
-        
-        if (data.valorEstimado) {
-          doc.fontSize(13)
-             .fillColor('#27AE60')
-             .font('Helvetica-Bold')
-             .text(`💵 Valor Estimado: ${data.valorEstimado}`, 50, doc.y)
-             .moveDown(1);
-        }
-      }
-
-      // === OBSERVACIONES ===
-      if (data.observaciones) {
-        doc.moveDown(1);
+      // ESPECIFICACIONES TÉCNICAS
+      if (data.especificaciones_tecnicas) {
         doc.fontSize(14)
-           .fillColor('#D32F2F')
-           .font('Helvetica-Bold')
-           .text('📋 OBSERVACIONES', 50, doc.y)
-           .moveDown(0.5);
+           .fillColor('#1e40af')
+           .text('ESPECIFICACIONES TÉCNICAS', { underline: true });
         
+        doc.moveDown(0.5);
         doc.fontSize(10)
            .fillColor('#000000')
-           .font('Helvetica')
-           .text(data.observaciones, 50, doc.y, { 
-             width: 500,
-             align: 'justify'
+           .text(data.especificaciones_tecnicas, {
+             align: 'justify',
+             width: 495
            });
+        
+        doc.moveDown(1.5);
       }
 
-      // === FOOTER ===
-      doc.moveDown(2);
-      
-      // Caja de advertencia
-      const warningY = doc.y;
-      doc.rect(50, warningY, 500, 80)
-         .fillColor('#FFF3CD')
-         .fill();
-      
-      doc.rect(50, warningY, 500, 80)
-         .strokeColor('#FFC107')
-         .lineWidth(2)
-         .stroke();
-      
-      doc.fontSize(12)
-         .fillColor('#856404')
-         .font('Helvetica-Bold')
-         .text('⚠️ PROMOCIÓN VÁLIDA POR 72 HORAS', 60, warningY + 15, { width: 480, align: 'center' });
-      
-      doc.fontSize(9)
-         .fillColor('#856404')
-         .font('Helvetica')
-         .text('Todas las bonificaciones especiales tendrán una vigencia de 72 horas', 60, warningY + 35, { width: 480, align: 'center' })
-         .text('a partir de que te haya llegado este presupuesto.', 60, warningY + 50, { width: 480, align: 'center' });
+      // OBSERVACIONES
+      if (data.observaciones) {
+        doc.fontSize(14)
+           .fillColor('#1e40af')
+           .text('OBSERVACIONES / NOTAS ADICIONALES', { underline: true });
+        
+        doc.moveDown(0.5);
+        doc.fontSize(10)
+           .fillColor('#000000')
+           .text(data.observaciones, {
+             align: 'justify',
+             width: 495
+           });
+        
+        doc.moveDown(1.5);
+      }
 
-      // Pie de página
+      // DISCLAIMER
+      const disclaimer = 'Todos los bonificaciones especiales tendrán una vigencia de 72 horas y serán válidos para el vehículo indicado en este presupuesto. No incluye IVA de bonos ni escrituración.';
+      
+      doc.addPage();
+      doc.fontSize(12)
+         .fillColor('#dc2626')
+         .text('⚠️ IMPORTANTE', { underline: true });
+      
+      doc.moveDown(0.5);
+      doc.fontSize(10)
+         .fillColor('#000000')
+         .text(disclaimer, {
+           align: 'justify',
+           width: 495
+         });
+
+      // PIE DE PÁGINA
+      doc.moveDown(2);
       doc.fontSize(8)
          .fillColor('#999999')
-         .font('Helvetica')
-         .text('Consulte condiciones y requisitos con su vendedor.', 50, doc.page.height - 50, { 
-           width: 500, 
-           align: 'center' 
+         .text('Este documento es un presupuesto y no constituye un contrato vinculante.', {
+           align: 'center'
          });
+      
+      doc.text('Para más información, contacte con nuestro equipo de ventas.', {
+        align: 'center'
+      });
 
       // Finalizar documento
       doc.end();
 
-      writeStream.on('finish', () => {
+      // Esperar a que termine de escribir
+      stream.on('finish', () => {
+        console.log('✅ PDF generado exitosamente:', filePath);
         resolve(filePath);
       });
 
-      writeStream.on('error', (error) => {
-        reject(error);
+      stream.on('error', (err) => {
+        console.error('❌ Error escribiendo PDF:', err);
+        reject(err);
       });
 
     } catch (error) {
+      console.error('❌ Error generando PDF:', error);
       reject(error);
     }
   });
 }
 
-module.exports = { generarPresupuestoPDF };
+module.exports = {
+  generarPresupuestoPDF
+};

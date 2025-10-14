@@ -1,9 +1,10 @@
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { createLead } = require('../services/leads');
 const db = require('../db');
 const fs = require('fs');
 const path = require('path');
+const pino = require('pino');
 
 // Configuración del Bot
 const BOT_CONFIG = {
@@ -15,116 +16,81 @@ const BOT_CONFIG = {
   MARCA: 'FIAT'
 };
 
-// Modelos FIAT disponibles con datos completos
+// Modelos FIAT disponibles
 const MODELOS_FIAT = {
   'titano': { 
     nombre: 'TITANO ENDURANCE MT 4X4',
     valor: '$48.694.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$17.042.900',
-    detalles: `💰 Cuotas 2 a 11: $637.851
-💰 Cuota 12: $674.085
-💰 Cuota 13: $683.592
-💰 Cuotas 14 a 18: $493.639
-💰 Cuotas 19 a 42: $516.509
-💰 Cuotas 43 a 84: $493.639`
+    anticipo: '$17.042.900'
   },
   'argo': { 
     nombre: 'ARGO DRIVE 1.3 MT',
     valor: '$27.898.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$9.764.300',
-    detalles: `💰 Cuotas 2 a 11: $389.488
-💰 Cuotas 12 y 13: $410.132
-💰 Desde cuota 14: $281.258`
+    anticipo: '$9.764.300'
   },
   'cronos_7030': { 
     nombre: 'CRONOS DRIVE 1.3 MT5 (Plan 70/30)',
     valor: '$32.820.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$11.487.000',
-    detalles: `💰 Cuotas 2 a 11: $427.545
-💰 Cuotas 12 y 13: $458.204
-💰 Desde cuota 14: $330.880`
+    anticipo: '$11.487.000'
   },
   'cronos_9010': { 
     nombre: 'CRONOS DRIVE 1.3 MT5 (Plan 90/10)',
     valor: '$32.820.000',
     plan: '90/10 - 84 cuotas',
-    anticipo: '$8.205.000',
-    detalles: `💰 Cuotas 2 a 11: $545.802
-💰 Cuotas 12 y 13: $570.089
-💰 Desde cuota 14: $418.478`
+    anticipo: '$8.205.000'
   },
   'fastback': { 
     nombre: 'FASTBACK TURBO 270 AT6',
     valor: '$40.653.000',
     plan: '60/40 - 84 cuotas',
-    anticipo: '$16.261.200',
-    detalles: `💰 Cuotas 2 a 11: $513.309
-💰 Cuotas 12 y 13: $543.392
-💰 Desde cuota 14: $355.598`
+    anticipo: '$16.261.200'
   },
   'mobi': { 
     nombre: 'MOBI TREKKING 1.0',
     valor: '$24.096.000',
     plan: '80/20 - 84 cuotas',
-    anticipo: '$7.228.800',
-    detalles: `💰 Cuotas 2 a 11: $285.953
-💰 Cuota 12: $303.785
-💰 Cuotas 13 a 18: $311.679
-💰 Cuota 19: $337.404
-💰 Cuotas 20 a 24: $275.085
-💰 Cuotas 25 a 72: $291.163
-💰 Desde cuota 73: $275.085`
+    anticipo: '$7.228.800'
   },
   'toro': { 
     nombre: 'TORO FREEDOM T270 AT6 4X2',
     valor: '$42.390.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$16.956.000',
-    detalles: `💰 Cuotas 2 a 11: $552.213
-💰 Cuotas 12 y 13: $591.812
-💰 Cuotas 14 a 18: $427.362
-💰 Cuotas 19 a 42: $447.162
-💰 Desde cuota 43: $427.362`
+    anticipo: '$16.956.000'
   },
   'pulse': { 
     nombre: 'PULSE DRIVE 1.3L MT',
     valor: '$32.833.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$11.491.550',
-    detalles: `💰 Cuotas 2 a 11: $458.385
-💰 Cuota 12: $482.681
-💰 Cuota 13: $458.385
-💰 Desde cuota 14: $331.011`
+    anticipo: '$11.491.550'
   },
   'fiorino': { 
     nombre: 'FIORINO ENDURANCE 1.4L',
     valor: '$27.459.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$10.983.600',
-    detalles: `💰 Cuotas 2 a 11: $383.358
-💰 Cuota 12: $403.358
-💰 Cuota 13: $383.358
-💰 Desde cuota 14: $276.832`
+    anticipo: '$10.983.600'
   },
   'strada': { 
     nombre: 'STRADA FREEDOM CD',
     valor: '$33.660.000',
     plan: '70/30 - 84 cuotas',
-    anticipo: '$13.464.000',
-    detalles: `💰 Cuotas 2 a 11: $469.931
-💰 Cuota 12: $494.840
-💰 Cuota 13: $469.931
-💰 Desde cuota 14: $339.349`
+    anticipo: '$13.464.000'
   }
 };
 
-// Almacenamiento de conversaciones
+// Almacenamiento
 const datosCliente = new Map();
 const temporizadores = new Map();
 const contactosBloqueados = new Map();
+let sockGlobal = null;
+let socketConectado = false;
+let isReconnecting = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+
+const logger = pino({ level: 'silent' });
 
 // Sistema de logging
 function log(nivel, mensaje, data = null) {
@@ -149,87 +115,102 @@ function log(nivel, mensaje, data = null) {
   }
 }
 
-// Test de conexión a base de datos
+// Test de conexión a BD
 async function testConexion() {
   try {
     log('INFO', '🔍 Iniciando test de conexión a BD...');
     
-    const dbName = await db.query('SELECT DATABASE() as db_name');
-    log('INFO', `📊 Base de datos conectada: ${JSON.stringify(dbName)}`);
+    const result = await db.query('SELECT DATABASE() as db_name');
+    const dbData = Array.isArray(result[0]) ? result[0][0] : result[0];
+    log('INFO', `📊 Base de datos: ${dbData.db_name}`);
     
-    const totalUsuarios = await db.query('SELECT COUNT(*) as total FROM users');
-    log('INFO', `👥 Total usuarios en BD: ${totalUsuarios[0].total}`);
+    const totalResult = await db.query('SELECT COUNT(*) as total FROM users');
+    const totalData = Array.isArray(totalResult[0]) ? totalResult[0][0] : totalResult[0];
+    log('INFO', `👥 Total usuarios: ${totalData.total}`);
     
-    const vendedoresActivos = await db.query(`SELECT COUNT(*) as total FROM users WHERE role = 'vendedor' AND active = 1`);
-    log('INFO', `✅ Vendedores activos: ${vendedoresActivos[0].total}`);
-    
-    const primerosVendedores = await db.query(`SELECT id, name, role, active FROM users WHERE role = 'vendedor' AND active = 1 LIMIT 3`);
-    log('INFO', `🔹 Primeros 3 vendedores: ${JSON.stringify(primerosVendedores)}`);
+    const vendedoresResult = await db.query(`SELECT COUNT(*) as total FROM users WHERE role = 'vendedor' AND active = 1`);
+    const vendedoresData = Array.isArray(vendedoresResult[0]) ? vendedoresResult[0][0] : vendedoresResult[0];
+    log('INFO', `✅ Vendedores activos: ${vendedoresData.total}`);
     
   } catch (error) {
-    log('ERROR', '❌ Error en test de conexión:', error);
+    log('ERROR', '❌ Error en test de conexión:', error.message);
   }
 }
 
-// Extraer número real del JID - MEJORADO
-function obtenerNumeroReal(msg) {
+// Extraer número real - LÓGICA MEJORADA
+async function obtenerNumeroReal(msg, sock) {
   try {
     const from = msg.key.remoteJid;
     
-    // MÉTODO 1: senderPn (sender phone number) - PRIORIDAD MÁXIMA
-    if (msg.key.senderPn) {
-      const numero = msg.key.senderPn.split('@')[0];
-      log('INFO', `✅ Número extraído de senderPn: ${numero}`);
-      return numero;
-    }
-    
-    // MÉTODO 2: remoteJid normal @s.whatsapp.net
-    if (from && from.includes('@s.whatsapp.net') && !from.includes('lid')) {
-      const numero = from.split('@')[0];
-      log('INFO', `✅ Número extraído de remoteJid: ${numero}`);
-      return numero;
-    }
-    
-    // MÉTODO 3: participant (mensajes en grupos)
+    // 1. Intentar participant primero
     if (msg.key.participant && !msg.key.participant.includes('lid')) {
       const numero = msg.key.participant.split('@')[0];
       log('INFO', `✅ Número extraído de participant: ${numero}`);
       return numero;
     }
     
-    // MÉTODO 4: contextInfo del mensaje
-    if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
-      const participantNum = msg.message.extendedTextMessage.contextInfo.participant.split('@')[0];
-      if (!participantNum.includes('lid')) {
-        log('INFO', `✅ Número extraído de contextInfo: ${participantNum}`);
-        return participantNum;
-      }
+    // 2. Si es @s.whatsapp.net normal
+    if (from && from.includes('@s.whatsapp.net') && !from.includes('lid')) {
+      const numero = from.split('@')[0];
+      log('INFO', `✅ Número extraído de remoteJid: ${numero}`);
+      return numero;
     }
     
-    // Si llegamos aquí con @lid pero NO hay senderPn
-    if (from && from.includes('lid')) {
-      log('ERROR', `❌ @lid sin senderPn disponible: ${from}`);
-      log('DEBUG', `Estructura completa del mensaje: ${JSON.stringify(msg.key)}`);
+    // 3. Si es @lid, intentar múltiples métodos
+    if (from && from.includes('@lid')) {
+      log('WARN', `⚠️ Contacto @lid detectado: ${from}`);
+      
+      try {
+        // Método A: Buscar números en el objeto del mensaje
+        const msgString = JSON.stringify(msg);
+        const numberMatches = msgString.match(/54\d{10,11}/g);
+        if (numberMatches && numberMatches.length > 0) {
+          const uniqueNumbers = [...new Set(numberMatches)];
+          log('INFO', `📱 Números encontrados: ${uniqueNumbers.join(', ')}`);
+          
+          for (const num of uniqueNumbers) {
+            if (num.length >= 12 && num.startsWith('54')) {
+              log('INFO', `✅ Número real encontrado: ${num}`);
+              return num;
+            }
+          }
+        }
+        
+        // Método B: contextInfo
+        if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
+          const participant = msg.message.extendedTextMessage.contextInfo.participant;
+          if (!participant.includes('lid')) {
+            const numero = participant.split('@')[0];
+            log('INFO', `✅ Número extraído de contextInfo: ${numero}`);
+            return numero;
+          }
+        }
+        
+      } catch (error) {
+        log('ERROR', `Error resolviendo @lid: ${error.message}`);
+      }
+      
+      log('ERROR', `❌ No se pudo resolver @lid: ${from}`);
       return null;
     }
     
-    // Default: intentar extraer de remoteJid
+    // 4. Fallback
     const numero = from.split('@')[0];
     if (numero && numero.length >= 10 && !numero.includes('lid')) {
       log('INFO', `✅ Número extraído (default): ${numero}`);
       return numero;
     }
     
-    log('ERROR', `❌ No se pudo extraer número válido de: ${from}`);
+    log('ERROR', `❌ No se pudo extraer número de: ${from}`);
     return null;
     
   } catch (error) {
-    log('ERROR', 'Error extrayendo número real:', error);
+    log('ERROR', 'Error extrayendo número:', error.message);
     return null;
   }
 }
 
-// Limpiar y formatear teléfono para Argentina
+// Limpiar teléfono
 function limpiarTelefonoWhatsApp(telefono, numeroReal = null) {
   try {
     if (numeroReal && !numeroReal.includes('lid')) {
@@ -237,10 +218,9 @@ function limpiarTelefonoWhatsApp(telefono, numeroReal = null) {
     }
     
     telefono = String(telefono ?? '');
-    log('INFO', `📞 Número original: ${telefono}`);
     
     if (telefono.includes('@lid') && !numeroReal) {
-      log('ERROR', `No se pudo obtener número real de @lid: ${telefono}`);
+      log('ERROR', `No se pudo obtener número real de @lid`);
       return null;
     }
     
@@ -252,67 +232,54 @@ function limpiarTelefonoWhatsApp(telefono, numeroReal = null) {
       return null;
     }
     
-    // Normalizar formato argentino
     let numeroFinal = soloDigitos;
     if (numeroFinal.startsWith('5454')) numeroFinal = numeroFinal.substring(2);
-    
-    if (numeroFinal.length === 10) {
-      numeroFinal = '549' + numeroFinal;
-    } else if (numeroFinal.length === 11 && numeroFinal.startsWith('9')) {
-      numeroFinal = '54' + numeroFinal;
-    } else if (numeroFinal.length === 12 && numeroFinal.startsWith('54')) {
-      numeroFinal = '549' + numeroFinal.substring(2);
-    } else if (!numeroFinal.startsWith('54')) {
-      if (numeroFinal.length >= 10) {
-        numeroFinal = '549' + numeroFinal.slice(-10);
-      }
-    }
+    if (numeroFinal.length === 10) numeroFinal = '549' + numeroFinal;
+    else if (numeroFinal.length === 11 && numeroFinal.startsWith('9')) numeroFinal = '54' + numeroFinal;
+    else if (numeroFinal.length === 12 && numeroFinal.startsWith('54')) numeroFinal = '549' + numeroFinal.substring(2);
+    else if (!numeroFinal.startsWith('54') && numeroFinal.length >= 10) numeroFinal = '549' + numeroFinal.slice(-10);
     
     const telefonoFinal = '+' + numeroFinal;
     log('INFO', `✅ Teléfono final: ${telefonoFinal}`);
     return telefonoFinal;
   } catch (error) {
-    log('ERROR', 'Error procesando teléfono:', error);
+    log('ERROR', 'Error procesando teléfono:', error.message);
     return null;
   }
 }
 
-// Obtener vendedor disponible - CORREGIDO
+// Obtener vendedor
 async function obtenerVendedorDisponible() {
   try {
-    log('INFO', '🔍 Buscando vendedor disponible...');
+    log('INFO', '🔍 Buscando vendedor...');
     
     const result = await db.query(
-      `SELECT id, name, role, active FROM users 
+      `SELECT id, name FROM users 
        WHERE role = 'vendedor' AND active = 1 
        ORDER BY RAND() LIMIT 1`
     );
     
-    // Extraer el primer nivel del array doble
-    const vendedores = result[0] || result;
-    
-    log('INFO', `📊 Consulta vendedores - Resultados: ${vendedores.length}`);
+    const vendedores = Array.isArray(result[0]) ? result[0] : result;
     
     if (vendedores.length > 0) {
-      log('INFO', `👤 Datos vendedor: ${JSON.stringify(vendedores[0])}`);
-      log('INFO', `✅ Vendedor seleccionado: ${vendedores[0].name} (ID: ${vendedores[0].id})`);
-      return vendedores[0].id;
+      const vendedor = Array.isArray(vendedores) ? vendedores[0] : vendedores;
+      log('INFO', `✅ Vendedor: ${vendedor.name} (ID: ${vendedor.id})`);
+      return vendedor.id;
     }
     
-    log('WARN', '⚠️ No hay vendedores activos en la base de datos');
+    log('WARN', '⚠️ No hay vendedores activos');
     return null;
     
   } catch (error) {
-    log('ERROR', '❌ Error obteniendo vendedor:', error);
+    log('ERROR', `❌ Error obteniendo vendedor: ${error.message}`);
     return null;
   }
 }
 
-// Detectar modelo FIAT en el texto
+// Detectar modelo
 function detectarModelo(texto) {
   const textoLower = texto.toLowerCase().trim();
   
-  // Buscar por número
   const modelosArray = Object.entries(MODELOS_FIAT);
   const numero = parseInt(textoLower);
   if (!isNaN(numero) && numero >= 1 && numero <= modelosArray.length) {
@@ -320,9 +287,9 @@ function detectarModelo(texto) {
     return { key, ...data };
   }
   
-  // Buscar por nombre
   for (const [key, data] of Object.entries(MODELOS_FIAT)) {
-    if (textoLower.includes(key) || textoLower.includes(data.nombre.toLowerCase())) {
+    const nombreLower = data.nombre.toLowerCase();
+    if (textoLower.includes(key) || nombreLower.includes(textoLower) || textoLower.includes(nombreLower.split(' ')[0])) {
       return { key, ...data };
     }
   }
@@ -330,31 +297,46 @@ function detectarModelo(texto) {
   return null;
 }
 
-// Enviar mensaje con reintentos
+// Enviar mensaje seguro
 async function enviarMensajeSeguro(sock, destinatario, contenido, reintentos = 3) {
   for (let i = 0; i < reintentos; i++) {
     try {
-      await sock.sendMessage(destinatario, contenido);
-      return true;
-    } catch (error) {
-      log('WARN', `Intento ${i + 1}/${reintentos} falló: ${error.message}`);
-      if (i < reintentos - 1) {
+      if (!socketConectado || !sockGlobal) {
+        log('WARN', `Socket no conectado (intento ${i + 1}/${reintentos})`);
         await new Promise(r => setTimeout(r, 2000));
+        
+        if (socketConectado && sockGlobal) {
+          sock = sockGlobal;
+        } else {
+          continue;
+        }
+      }
+
+      await sockGlobal.sendMessage(destinatario, contenido);
+      log('INFO', `✅ Mensaje enviado`);
+      return true;
+      
+    } catch (error) {
+      log('WARN', `⚠️ Intento ${i + 1}/${reintentos} falló: ${error.message}`);
+      if (i < reintentos - 1) {
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
       }
     }
   }
+  
+  log('ERROR', '❌ No se pudo enviar mensaje después de reintentos');
   return false;
 }
 
-// Crear lead en CRM
+// Crear lead
 async function crearLeadEnCRM(leadData) {
   try {
-    log('INFO', `Creando lead en CRM: ${leadData.nombre}`);
+    log('INFO', `Creando lead: ${leadData.nombre}`);
     
     const telefonoLimpio = limpiarTelefonoWhatsApp(leadData.telefono, leadData.numeroReal);
     
     if (!telefonoLimpio) {
-      log('WARN', `Número inválido: ${leadData.telefono}`);
+      log('WARN', `Número inválido`);
       return { success: false, error: 'NUMERO_INVALIDO' };
     }
 
@@ -364,29 +346,26 @@ async function crearLeadEnCRM(leadData) {
       nombre: leadData.nombre,
       telefono: telefonoLimpio,
       modelo: leadData.modelo || 'Consultar',
-      formaPago: leadData.formaPago || 'A definir',
-      infoUsado: leadData.infoUsado || '',
-      entrega: !!leadData.infoUsado,
+      formaPago: 'A definir',
+      infoUsado: '',
+      entrega: 0,
       fecha: new Date().toISOString().split('T')[0],
       estado: 'nuevo',
       fuente: BOT_CONFIG.CRM_SOURCE,
       assigned_to: vendedorId,
       notas: `[${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.MARCA}]
-🤖 Sistema: ${BOT_CONFIG.BOT_ID}
-⚡ Timestamp: ${new Date().toISOString()}
-📞 Teléfono: ${telefonoLimpio}
-🎯 Captura automática WhatsApp
-${vendedorId ? `👤 Vendedor ID: ${vendedorId}` : '⚠️ SIN VENDEDOR ASIGNADO'}
+🤖 ${BOT_CONFIG.BOT_ID}
+📞 ${telefonoLimpio}
+🎯 WhatsApp Bot
+${vendedorId ? `👤 Vendedor: ${vendedorId}` : '⚠️ Sin vendedor'}
 
-📋 INFORMACIÓN DEL LEAD:
-- Cliente: ${leadData.nombre}
-- Modelo: ${leadData.modelo || 'A consultar'}
-- Forma pago: ${leadData.formaPago || 'A definir'}
-- Usado: ${leadData.infoUsado || 'Sin información'}`,
+📋 DATOS:
+- ${leadData.nombre}
+- ${leadData.modelo || 'A consultar'}`,
       equipo: 'roberto'
     });
 
-    log('INFO', `✅ Lead creado exitosamente: ID ${lead.id}`);
+    log('INFO', `✅ Lead creado: ID ${lead.id}`);
     return { success: true, data: lead };
 
   } catch (error) {
@@ -401,19 +380,20 @@ ${vendedorId ? `👤 Vendedor ID: ${vendedorId}` : '⚠️ SIN VENDEDOR ASIGNADO
       const filename = path.join(fallbackDir, `lead-${Date.now()}.json`);
       fs.writeFileSync(filename, JSON.stringify({
         ...leadData,
-        errorInfo: { message: error.message, timestamp: new Date().toISOString() }
+        error: error.message,
+        timestamp: new Date().toISOString()
       }, null, 2));
       
-      log('INFO', `📝 Lead guardado en fallback: ${filename}`);
+      log('INFO', `📝 Guardado en fallback`);
     } catch (e) {
-      log('ERROR', 'Error guardando fallback', e);
+      log('ERROR', 'Error en fallback', e.message);
     }
     
     return { success: false, error: error.message };
   }
 }
 
-// Temporizador de inactividad (6 horas)
+// Temporizador 20 minutos
 function iniciarTemporizador(from, cliente, sock) {
   if (temporizadores.has(from)) {
     clearTimeout(temporizadores.get(from));
@@ -423,75 +403,104 @@ function iniciarTemporizador(from, cliente, sock) {
     const datos = datosCliente.get(from);
     if (!datos) return;
 
-    const respondioAlgo = datos.nombre || datos.modelo || datos.formaPago || datos.usadoInfo;
+    const respondioAlgo = datos.nombre || datos.modelo;
 
     const payload = {
       nombre: datos.nombre || (respondioAlgo ? 'Lead sin nombre' : 'Lead Incompleto'),
       telefono: from,
       numeroReal: datos.numeroReal,
-      modelo: datos.modelo || '',
-      formaPago: datos.formaPago || '',
-      infoUsado: datos.usadoInfo || ''
+      modelo: datos.modelo || ''
     };
 
     await crearLeadEnCRM(payload);
 
     await enviarMensajeSeguro(sock, from, {
-      text: `Vimos que no completaste todos los datos, pero no te preocupes 😊\n\nYa pasé tu información para que un asesor te contacte y te ayude con tu 0km FIAT 🚗`
+      text: `Pasó un tiempo sin respuesta, pero no te preocupes 😊\n\nYa derivé tu info para que un asesor te contacte 🚗`
     });
 
     datosCliente.delete(from);
     temporizadores.delete(from);
-  }, 21600000);
+  }, 1200000); // 20 minutos
 
   temporizadores.set(from, timer);
 }
 
-// Procesar mensajes del cliente
+// Procesar mensajes
 async function procesarMensaje(sock, msg) {
   try {
-    const numeroReal = obtenerNumeroReal(msg);
+    const numeroReal = await obtenerNumeroReal(msg, sock);
     const from = msg.key.remoteJid;
     
     log('INFO', `📱 Mensaje de: ${numeroReal || 'desconocido'}`);
     
-    if (!msg.message) {
-      log('WARN', `Mensaje sin contenido`);
-      await enviarMensajeSeguro(sock, from, {
-        text: 'Disculpa, hubo un error al recibir tu mensaje. ¿Podrías reenviarlo? 🙏'
-      });
+    if (!msg.message || Object.keys(msg.message).length === 0) {
       return;
     }
 
     let texto = '';
-    if (msg.message?.conversation) {
-      texto = msg.message.conversation;
-    } else if (msg.message?.extendedTextMessage?.text) {
-      texto = msg.message.extendedTextMessage.text;
-    } else {
-      log('WARN', 'Tipo de mensaje no soportado');
-      return;
-    }
+    if (msg.message?.conversation) texto = msg.message.conversation;
+    else if (msg.message?.extendedTextMessage?.text) texto = msg.message.extendedTextMessage.text;
+    else if (msg.message?.buttonsResponseMessage?.selectedButtonId) texto = msg.message.buttonsResponseMessage.selectedButtonId;
+    else if (msg.message?.templateButtonReplyMessage?.selectedId) texto = msg.message.templateButtonReplyMessage.selectedId;
+    else if (msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId) texto = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+    else return;
 
-    const textoLower = texto.toLowerCase().trim();
-
-    // Si NO hay número real, bloquear
+    // SI NO hay número real, solicitar
     if (!numeroReal) {
-      if (contactosBloqueados.has(from)) {
-        log('INFO', `⛔ Ignorando mensaje de contacto bloqueado: ${from}`);
+      log('WARN', `⚠️ No se pudo obtener número`);
+      
+      if (!datosCliente.has(from)) {
+        datosCliente.set(from, { 
+          paso: 'solicitar_telefono',
+          numeroReal: null,
+          esLid: true,
+          pushName: msg.pushName || 'Cliente'
+        });
+        
+        await enviarMensajeSeguro(sock, from, {
+          text: `Hola! Soy *${BOT_CONFIG.BOT_NAME}* 👋\n\n*Felicitaciones!* Fuiste seleccionado para la *PROMO MUNDIAL 2026* 🏆\n\n📱 Necesito tu número de WhatsApp con código de área.\n\n💡 Ejemplo: *11 2345 6789*`
+        });
         return;
       }
       
-      log('ERROR', `❌ No se pudo extraer número real de: ${from}`);
-      contactosBloqueados.set(from, { timestamp: new Date().toISOString() });
+      const cliente = datosCliente.get(from);
       
-      await enviarMensajeSeguro(sock, from, {
-        text: '❌ Lo siento, no puedo procesar mensajes desde este tipo de contacto.\n\n📱 Por favor, envíame un mensaje directo desde tu WhatsApp personal.\n\nGracias 🙏'
-      });
-      return;
+      if (cliente.paso === 'solicitar_telefono') {
+        const textoLimpio = texto.replace(/\D/g, '');
+        
+        if (textoLimpio.length >= 10) {
+          let numeroExtraido = textoLimpio;
+          
+          if (numeroExtraido.length === 10) numeroExtraido = '549' + numeroExtraido;
+          else if (numeroExtraido.length === 11 && numeroExtraido.startsWith('9')) numeroExtraido = '54' + numeroExtraido;
+          else if (numeroExtraido.length === 12 && numeroExtraido.startsWith('54')) numeroExtraido = '549' + numeroExtraido.substring(2);
+          else if (!numeroExtraido.startsWith('54') && numeroExtraido.length >= 10) numeroExtraido = '549' + numeroExtraido.slice(-10);
+          
+          cliente.numeroReal = numeroExtraido;
+          cliente.paso = 'modelo';
+          
+          log('INFO', `✅ Número obtenido: ${numeroExtraido}`);
+          
+          const listaModelos = Object.entries(MODELOS_FIAT)
+            .map(([key, data], index) => `${index + 1}️⃣ ${data.nombre}`)
+            .join('\n');
+          
+          iniciarTemporizador(from, cliente, sock);
+          
+          await enviarMensajeSeguro(sock, from, {
+            text: `Perfecto! 👍\n\n¿Qué modelo de FIAT te gustaría?\n\n${listaModelos}\n\n_Escribí el número o nombre_`
+          });
+          return;
+        } else {
+          await enviarMensajeSeguro(sock, from, {
+            text: '📱 Necesito un número válido.\n\n💡 Ejemplo: *11 2345 6789*'
+          });
+          return;
+        }
+      }
     }
 
-    log('INFO', `✅ Procesando conversación con número real: ${numeroReal}`);
+    log('INFO', `✅ Procesando con número: ${numeroReal}`);
 
     // Iniciar conversación
     if (!datosCliente.has(from)) {
@@ -506,89 +515,35 @@ async function procesarMensaje(sock, msg) {
         .join('\n');
 
       await enviarMensajeSeguro(sock, from, {
-        text: `🏆 Hola soy *${BOT_CONFIG.BOT_NAME}* tu asistente virtual de *Auto del sol*, estoy para ayudarte a tener tu 0km FIAT.\n\n🎉 *¡Felicitaciones!* Fuiste uno de los seleccionados para participar *EN LA PROMO MUNDIAL 2026*🏆.\n\nPor lo cual tendrás beneficios especiales y un montón de regalos.\n\n🚗 *¿Qué modelo de FIAT te gustaría tener?*\n\n${listaModelos}\n\nDecime el número del modelo que te interesa o escribilo directamente.`
+        text: `Hola! Soy *${BOT_CONFIG.BOT_NAME}* 👋\n\nTu asistente de *${BOT_CONFIG.COMPANY}*\n\n*Felicitaciones!* Fuiste seleccionado para la *PROMO MUNDIAL 2026* 🏆\n\n¿Qué modelo FIAT te gustaría?\n\n${listaModelos}\n\n_Escribí el número o nombre_`
       });
-
       return;
     }
 
     const cliente = datosCliente.get(from);
 
-    // PASO 1: Seleccionar modelo
+    // PASO 1: Modelo
     if (cliente.paso === 'modelo') {
       const modelo = detectarModelo(texto);
 
       if (!modelo) {
         await enviarMensajeSeguro(sock, from, {
-          text: 'No entendí el modelo. Respondé con el *número* o el *nombre* (ej: Argo, Cronos, Pulse, etc.).'
+          text: 'No entendí el modelo 😅\n\nRespondé con el *número* o *nombre*'
         });
         return;
       }
 
       cliente.modelo = modelo.nombre;
-      iniciarTemporizador(from, cliente, sock);
-
-      await enviarMensajeSeguro(sock, from, {
-        text: `🎯 ¡Excelente elección! El *${modelo.nombre}* es un modelo increíble. Te cuento más sobre él:\n\n💰 Valor: ${modelo.valor}\n📋 ${modelo.plan}\n💸 Anticipo: ${modelo.anticipo}\n\n${modelo.detalles}\n\n⚡ *Y DENTRO DE LAS PRÓXIMAS 72 HORAS TENÉS TODOS ESTOS BENEFICIOS ESPECIALES*\n\n✅ *ADJUDICACIÓN ASEGURADA*\n✅ *ENTREGA DE USADOS LLAVE CONTRA LLAVE*\n✅ *PROMO AMIGOS*\n✅ *VOUCHER VACACIONAL*\n✅ *TANQUE LLENO* al retirar tu 0km\n✅ *12 CUOTAS BONIFICADAS*\n✅ *VOUCHER DE $1.000.000 PARA GASTOS DE RETIRO*\n✅ *POLARIZADO*\n🎁 *Y MUCHOS REGALOS MÁS PARA DISFRUTAR EL MUNDIAL A PLENO!*`
-      });
-
-      cliente.paso = 'formaPago';
-      await enviarMensajeSeguro(sock, from, {
-        text: `💳 *¿Cómo pensás pagar el anticipo?*\n\n1️⃣ Solo en efectivo\n2️⃣ Solo entregando un usado (desde 2010)\n3️⃣ Efectivo + usado`
-      });
-      return;
-    }
-
-    // PASO 2: Forma de pago
-    if (cliente.paso === 'formaPago') {
-      const opcionesPago = {
-        '1': 'Efectivo',
-        '2': 'Usado',
-        '3': 'Efectivo + Usado',
-        'efectivo': 'Efectivo',
-        'usado': 'Usado',
-        'efectivo + usado': 'Efectivo + Usado'
-      };
-
-      const formaPagoDetectada = Object.entries(opcionesPago)
-        .find(([clave]) => textoLower.includes(clave));
-      
-      if (formaPagoDetectada) {
-        cliente.formaPago = formaPagoDetectada[1];
-        
-        if (cliente.formaPago.includes('Usado')) {
-          cliente.paso = 'usadoInfo';
-          iniciarTemporizador(from, cliente, sock);
-          await enviarMensajeSeguro(sock, from, {
-            text: '🚘 *Decime los siguientes datos del usado:*\n\n📋 Marca - Modelo - Año - Kilómetros\n\n💡 Ejemplo: FIAT Cronos 2020 45000KM'
-          });
-        } else if (cliente.formaPago === 'Efectivo') {
-          cliente.paso = 'nombre';
-          iniciarTemporizador(from, cliente, sock);
-          await enviarMensajeSeguro(sock, from, { 
-            text: '💪 ¡Entendido! Ya estás más cerca de tu próximo 0KM 🚗\n\n👤 *Decime tu nombre completo:*' 
-          });
-        }
-      } else {
-        await enviarMensajeSeguro(sock, from, { 
-          text: 'No te entendí. Indicá si es *1) efectivo*, *2) usado* o *3) efectivo + usado*.' 
-        });
-      }
-      return;
-    }
-
-    // PASO 3: Info del usado
-    if (cliente.paso === 'usadoInfo') {
-      cliente.usadoInfo = texto;
       cliente.paso = 'nombre';
       iniciarTemporizador(from, cliente, sock);
-      await enviarMensajeSeguro(sock, from, { 
-        text: '✅ ¡Perfecto! El auto usado que mencionaste entra dentro de lo aceptado.\n\n¿Podés confirmarme tu nombre completo para continuar con la gestión?' 
+
+      await enviarMensajeSeguro(sock, from, {
+        text: `Excelente! El *${modelo.nombre}* es increíble 🚗✨\n\n¿Cuál es tu nombre completo?`
       });
       return;
     }
 
-    // PASO 4: Nombre y finalización
+    // PASO 2: Nombre
     if (cliente.paso === 'nombre') {
       cliente.nombre = texto;
       
@@ -598,16 +553,14 @@ async function procesarMensaje(sock, msg) {
       }
 
       await enviarMensajeSeguro(sock, from, {
-        text: `📢 ¡Gracias, ${cliente.nombre.charAt(0).toUpperCase() + cliente.nombre.slice(1)}!\n\nUn especialista de Auto del sol se va a contactar con vos para continuar con tu financiación exclusiva 🚗\n\n🎁 *NO TE OLVIDES DE TODOS LOS BENEFICIOS ESPECIALES QUE TENÉS*\n\n✅ *ADJUDICACIÓN ASEGURADA*\n✅ *ENTREGA DE USADOS LLAVE CONTRA LLAVE*\n✅ *PROMO AMIGOS*\n✅ *VOUCHER VACACIONAL*\n✅ *TANQUE LLENO* al retirar tu 0km\n✅ *12 CUOTAS BONIFICADAS*\n✅ *VOUCHER DE $1.000.000 PARA GASTOS DE RETIRO*\n✅ *POLARIZADO*\n🏆 *Y MUCHOS REGALOS MÁS PARA DISFRUTAR EL MUNDIAL A PLENO!*`
+        text: `Gracias, *${cliente.nombre.charAt(0).toUpperCase() + cliente.nombre.slice(1)}*! 🎉\n\nUn especialista te contactará pronto.\n\n✨ *BENEFICIOS EXCLUSIVOS:* ✨\n\n🏆 ADJUDICACIÓN ASEGURADA\n🔑 ENTREGA LLAVE X LLAVE\n⛽ TANQUE LLENO\n💰 12 CUOTAS BONIFICADAS\n🎁 VOUCHER $1.000.000\n🎨 POLARIZADO\n🏖️ VOUCHER VACACIONAL\n👥 PROMO AMIGOS\n\n*¡Y MUCHOS MÁS!* 🎁`
       });
 
       const leadData = {
         nombre: cliente.nombre,
         telefono: from,
         numeroReal: cliente.numeroReal,
-        modelo: cliente.modelo,
-        formaPago: cliente.formaPago,
-        infoUsado: cliente.usadoInfo || ''
+        modelo: cliente.modelo
       };
 
       await crearLeadEnCRM(leadData);
@@ -616,60 +569,107 @@ async function procesarMensaje(sock, msg) {
     }
 
   } catch (error) {
-    log('ERROR', `Error procesando mensaje: ${error.message}`, error);
+    log('ERROR', `Error: ${error.message}`);
   }
 }
 
 // Iniciar bot
 async function startBot() {
+  if (isReconnecting) {
+    log('WARN', '⏳ Reconexión en progreso...');
+    return;
+  }
+
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    log('ERROR', `❌ Máximo de intentos alcanzado`);
+    reconnectAttempts = 0;
+    setTimeout(() => startBot(), 300000);
+    return;
+  }
+
+  isReconnecting = true;
+  
   try {
-    log('INFO', `Iniciando ${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.MARCA}...`);
+    log('INFO', `🚀 Iniciando ${BOT_CONFIG.BOT_NAME}... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
     
-    // Test de conexión a BD
     await testConexion();
+    
+    const { version } = await fetchLatestBaileysVersion();
+    log('INFO', `📦 Baileys: ${version.join('.')}`);
     
     const { state, saveCreds } = await useMultiFileAuthState(BOT_CONFIG.SESSION_DIR);
     
     const sock = makeWASocket({
+      version,
       auth: state,
-      printQRInTerminal: true,
-      browser: ['FIAT CRM Bot', 'Chrome', '20.0.04'],
+      printQRInTerminal: false,
+      browser: ['FIAT Bot', 'Chrome', '20.0.04'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
-      defaultQueryTimeoutMs: undefined,
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 30000
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      retryRequestDelayMs: 3000,
+      qrTimeout: 60000,
+      logger
     });
-
+    
+    sockGlobal = sock;
+    
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       const { qr, connection, lastDisconnect } = update;
 
       if (qr) {
         console.clear();
-        console.log(`\n📱 ESCANEA ESTE QR PARA ${BOT_CONFIG.BOT_NAME} (${BOT_CONFIG.MARCA}):\n`);
+        console.log(`\n${'='.repeat(50)}`);
+        console.log(`QR PARA ${BOT_CONFIG.BOT_NAME} (${BOT_CONFIG.MARCA}):`);
+        console.log(`${'='.repeat(50)}\n`);
         qrcode.generate(qr, { small: true });
-        console.log(`\n🤖 Bot: ${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.BOT_ID}\n`);
+        console.log(`\n${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.BOT_ID}`);
+        console.log(`${'='.repeat(50)}\n`);
       }
 
       if (connection === 'close') {
+        isReconnecting = false;
+        sockGlobal = null;
+        socketConectado = false;
+        
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        log('WARN', `Conexión cerrada. Código: ${statusCode}. Reconectar: ${shouldReconnect}`);
+        
+        log('WARN', `🔌 Conexión cerrada. Código: ${statusCode}`);
+        
+        if (statusCode === DisconnectReason.loggedOut) {
+          log('ERROR', '🚫 Sesión cerrada - Escanear QR');
+          reconnectAttempts = 0;
+          return;
+        }
         
         if (shouldReconnect) {
-          setTimeout(() => startBot(), 3000);
+          reconnectAttempts++;
+          const delay = Math.min(5000 * reconnectAttempts, 60000);
+          log('INFO', `🔄 Reconectando en ${delay/1000}s... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          setTimeout(() => {
+            isReconnecting = false;
+            startBot();
+          }, delay);
         }
       }
 
       if (connection === 'open') {
-        console.log(`\n✅ ${BOT_CONFIG.BOT_NAME} (${BOT_CONFIG.MARCA}) CONECTADO!`);
-        console.log(`🤖 Bot ID: ${BOT_CONFIG.BOT_ID}`);
-        console.log(`📞 Clientes activos: ${datosCliente.size}`);
-        console.log(`⛔ Contactos bloqueados: ${contactosBloqueados.size}`);
-        console.log(`🚀 Bot listo para recibir mensajes...\n`);
-        log('INFO', `${BOT_CONFIG.BOT_NAME} conectado exitosamente`);
+        console.log(`\n${'='.repeat(50)}`);
+        console.log(`✅ ${BOT_CONFIG.BOT_NAME} CONECTADO!`);
+        console.log(`${BOT_CONFIG.BOT_ID} - ${BOT_CONFIG.MARCA}`);
+        console.log(`⏱️  Temporizador: 20 minutos`);
+        console.log(`${'='.repeat(50)}\n`);
+        log('INFO', '✅ Conectado');
+        
+        isReconnecting = false;
+        reconnectAttempts = 0;
+        sockGlobal = sock;
+        socketConectado = true;
       }
     });
 
@@ -686,10 +686,36 @@ async function startBot() {
     return sock;
 
   } catch (error) {
-    log('ERROR', 'Error crítico en startBot', error);
-    console.error(`💥 Error crítico:`, error);
-    setTimeout(() => startBot(), 5000);
+    isReconnecting = false;
+    socketConectado = false;
+    log('ERROR', `💥 Error crítico: ${error.message}`);
+    reconnectAttempts++;
+    
+    const delay = Math.min(10000 * reconnectAttempts, 60000);
+    log('INFO', `🔄 Reintentando en ${delay/1000}s...`);
+    setTimeout(() => {
+      isReconnecting = false;
+      startBot();
+    }, delay);
   }
 }
+
+process.on('SIGINT', async () => {
+  log('INFO', '🛑 Deteniendo bot...');
+  socketConectado = false;
+  if (sockGlobal) {
+    await sockGlobal.logout();
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  log('INFO', '🛑 Deteniendo bot...');
+  socketConectado = false;
+  if (sockGlobal) {
+    await sockGlobal.logout();
+  }
+  process.exit(0);
+});
 
 module.exports = { startBot };
