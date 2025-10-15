@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, checkRole } = require('../middleware/auth');
-const { generarPresupuestoPDF } = require('../utils/pdfGenerator');
+// const { generarPresupuestoPDF } = require('../utils/pdfGenerator');
 const fs = require('fs');
 
 // Todas las rutas requieren autenticación
@@ -194,27 +194,6 @@ router.delete('/:id', checkRole('owner'), async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar presupuesto:', error);
     res.status(500).json({ error: 'Error al eliminar presupuesto' });
-  }
-});
-
-// GENERAR PDF PERSONALIZADO
-router.post('/generar-pdf', authMiddleware, async (req, res) => {
-  try {
-    console.log('📄 Generando PDF con datos:', req.body);
-    
-    const filePath = await generarPresupuestoPDF(req.body);
-    
-    res.download(filePath, `presupuesto_${req.body.cliente}_${Date.now()}.pdf`, (err) => {
-      if (err) {
-        console.error('Error al enviar PDF:', err);
-      }
-      // Eliminar archivo temporal después de enviar
-      fs.unlinkSync(filePath);
-    });
-
-  } catch (error) {
-    console.error('Error al generar PDF:', error);
-    res.status(500).json({ error: 'Error al generar presupuesto PDF' });
   }
 });
 
