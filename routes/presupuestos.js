@@ -1,8 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, checkRole } = require('../middleware/auth');
-// const { generarPresupuestoPDF } = require('../utils/pdfGenerator');
-const fs = require('fs');
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
@@ -18,7 +16,9 @@ router.get('/', async (req, res) => {
     
     const presupuestosWithParsedPlanes = presupuestos.map(p => ({
       ...p,
-      planes_cuotas: p.planes_cuotas ? JSON.parse(p.planes_cuotas) : null,
+      planes_cuotas: typeof p.planes_cuotas === 'string' 
+        ? JSON.parse(p.planes_cuotas) 
+        : p.planes_cuotas,
       activo: Boolean(p.activo)
     }));
     
@@ -43,7 +43,9 @@ router.get('/:id', async (req, res) => {
     }
 
     const presupuesto = presupuestos[0];
-    presupuesto.planes_cuotas = presupuesto.planes_cuotas ? JSON.parse(presupuesto.planes_cuotas) : null;
+    presupuesto.planes_cuotas = typeof presupuesto.planes_cuotas === 'string'
+      ? JSON.parse(presupuesto.planes_cuotas)
+      : presupuesto.planes_cuotas;
     presupuesto.activo = Boolean(presupuesto.activo);
 
     res.json(presupuesto);
@@ -98,7 +100,9 @@ router.post('/', checkRole('owner'), async (req, res) => {
     );
     
     const presupuesto = newPresupuesto[0];
-    presupuesto.planes_cuotas = presupuesto.planes_cuotas ? JSON.parse(presupuesto.planes_cuotas) : null;
+    presupuesto.planes_cuotas = typeof presupuesto.planes_cuotas === 'string'
+      ? JSON.parse(presupuesto.planes_cuotas)
+      : presupuesto.planes_cuotas;
     presupuesto.activo = Boolean(presupuesto.activo);
 
     console.log(`✅ Presupuesto creado: ${marca} ${modelo}`);
@@ -162,7 +166,9 @@ router.put('/:id', checkRole('owner'), async (req, res) => {
     );
     
     const presupuesto = updatedPresupuesto[0];
-    presupuesto.planes_cuotas = presupuesto.planes_cuotas ? JSON.parse(presupuesto.planes_cuotas) : null;
+    presupuesto.planes_cuotas = typeof presupuesto.planes_cuotas === 'string'
+      ? JSON.parse(presupuesto.planes_cuotas)
+      : presupuesto.planes_cuotas;
     presupuesto.activo = Boolean(presupuesto.activo);
 
     console.log(`✅ Presupuesto actualizado: ${marca} ${modelo}`);
