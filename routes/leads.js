@@ -55,7 +55,7 @@ async function getNextVendedor(db, equipo = 'principal') {
   }
 }
 
-// Listar leads
+// Listar leads - ✅ CORREGIDO
 router.get('/', async (req, res) => {
   try {
     const [leads] = await req.db.query(`
@@ -87,14 +87,19 @@ router.get('/', async (req, res) => {
     });
     
     console.log(`📋 Listado de ${leads.length} leads`);
-    res.json(leadsWithParsedHistorial);
+    
+    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'leads'
+    res.json({ 
+      leads: leadsWithParsedHistorial,
+      total: leadsWithParsedHistorial.length 
+    });
   } catch (error) {
     console.error('Error al listar leads:', error);
     res.status(500).json({ error: 'Error al obtener leads' });
   }
 });
 
-// Obtener un lead específico
+// Obtener un lead específico - ✅ CORREGIDO
 router.get('/:id', async (req, res) => {
   try {
     const [leads] = await req.db.query(
@@ -117,14 +122,15 @@ router.get('/:id', async (req, res) => {
     
     lead.entrega = Boolean(lead.entrega);
 
-    res.json(lead);
+    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
+    res.json({ lead });
   } catch (error) {
     console.error('Error al obtener lead:', error);
     res.status(500).json({ error: 'Error al obtener lead' });
   }
 });
 
-// Crear lead
+// Crear lead - ✅ CORREGIDO
 router.post('/', async (req, res) => {
   try {
     const {
@@ -213,14 +219,19 @@ router.post('/', async (req, res) => {
     lead.entrega = Boolean(lead.entrega);
 
     console.log(`✅ Lead creado: ${nombre} - Vendedor: ${nombreVendedor} (${fuente})`);
-    res.status(201).json(lead);
+    
+    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
+    res.status(201).json({ 
+      lead,
+      message: 'Lead creado exitosamente' 
+    });
   } catch (error) {
     console.error('Error al crear lead:', error);
     res.status(500).json({ error: 'Error al crear lead: ' + error.message });
   }
 });
 
-// Actualizar lead
+// Actualizar lead - ✅ CORREGIDO
 router.put('/:id', async (req, res) => {
   try {
     const leadId = req.params.id;
@@ -322,7 +333,12 @@ router.put('/:id', async (req, res) => {
     lead.entrega = Boolean(lead.entrega);
 
     console.log(`✅ Lead actualizado: ID ${leadId}`);
-    res.json(lead);
+    
+    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
+    res.json({ 
+      lead,
+      message: 'Lead actualizado exitosamente' 
+    });
   } catch (error) {
     console.error('Error al actualizar lead:', error);
     res.status(500).json({ error: 'Error al actualizar lead' });
@@ -342,7 +358,10 @@ router.delete('/:id', checkRole('owner'), async (req, res) => {
     await req.db.query('DELETE FROM leads WHERE id = ?', [leadId]);
 
     console.log(`🗑️ Lead eliminado: ${leads[0].nombre}`);
-    res.json({ ok: true, message: 'Lead eliminado correctamente' });
+    res.json({ 
+      success: true,
+      message: 'Lead eliminado correctamente' 
+    });
   } catch (error) {
     console.error('Error al eliminar lead:', error);
     res.status(500).json({ error: 'Error al eliminar lead' });
