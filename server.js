@@ -101,10 +101,20 @@ app.use((req, res, next) => {
 // RUTAS PRINCIPALES
 // ============================================
 
+console.log('🔍 Registrando authRouter...');
+console.log('authRouter tipo:', typeof authRouter);
 app.use('/api/auth', authRouter);
+console.log('✅ authRouter registrado');
+
+console.log('🔍 Registrando leadsRouter...');
+console.log('leadsRouter tipo:', typeof leadsRouter);
 app.use('/api/leads', leadsRouter);
+console.log('✅ leadsRouter registrado');
+
+console.log('🔍 Registrando presupuestosRouter...');
+console.log('presupuestosRouter tipo:', typeof presupuestosRouter);
 app.use('/api/presupuestos', presupuestosRouter);
-app.use('/api/webhooks', require('./routes/webhooks'));
+console.log('✅ presupuestosRouter registrado');
 
 // Rutas opcionales (solo si existen)
 if (usersRouter) {
@@ -138,12 +148,8 @@ if (pushRouter) {
 }
 
 if (metasRouter) {
-  try {
-    app.use('/api/metas', metasRouter);
-    console.log('✅ Ruta /api/metas registrada');
-  } catch (err) {
-    console.error('❌ Error registrando ruta metas:', err.message);
-  }
+  app.use('/api/metas', metasRouter);
+  console.log('✅ Ruta /api/metas registrada');
 }
 
 // Health check
@@ -180,7 +186,6 @@ app.get('/', (_req, res) => {
       tareas: tareasRouter ? '/api/tareas' : null,
       push: pushRouter ? '/api/push' : null,
       metas: metasRouter ? '/api/metas' : null,
-      webhooks: '/api/webhooks',
       health: '/api/health',
     }
   });
@@ -226,150 +231,6 @@ app.listen(PORT, () => {
   console.log(`   ${pushRouter ? '✅' : '⚠️'} Push Notifications`);
   console.log(`   ${metasRouter ? '✅' : '⚠️'} Metas`);
   console.log('╚═══════════════════════════════════════╝');
-  
-  // Iniciar cron jobs
-  initCronJobs();
-});
-
-// ============================================
-// CRON JOBS
-// ============================================
-
-function initCronJobs() {
-  console.log('⏰ Iniciando cron jobs...');
-
-  // Importar servicios
-  let tareasService, recordatoriosService, pushService;
-  
-  try {
-    tareasService = require('./services/tareas');
-  } catch (err) {
-    console.warn('   ⚠️  Servicio de tareas no disponible');
-  }
-
-  try {
-    recordatoriosService = require('./services/recordatorios');
-  } catch (err) {
-    console.warn('   ⚠️  Servicio de recordatorios no disponible');
-  }
-
-  try {
-    pushService = require('./services/pushNotifications');
-  } catch (err) {
-    console.warn('   ⚠️  Servicio de push no disponible');
-  }
-
-  // ============================================
-  // CRON 1: Generar tareas automáticas cada hora
-  // ============================================
-  if (tareasService && tareasService.generarTareasAutomaticas) {
-    cron.schedule('0 * * * *', async () => {
-      console.log('📋 [CRON] Generando tareas automáticas...');
-      try {
-        const tareas = await tareasService.generarTareasAutomaticas();
-        console.log(`   ✅ ${tareas.length} tareas generadas`);
-      } catch (error) {
-        console.error('   ❌ Error generando tareas:', error.message);
-      }
-    });
-    console.log('   ✅ Cron de tareas automáticas activo (cada hora)');
-  }
-
-  // ============================================
-  // CRON 2: Verificar recordatorios pendientes cada 5 minutos
-  // ============================================
-  if (recordatoriosService && pushService) {
-    cron.schedule('*/5 * * * *', async () => {
-      try {
-        if (recordatoriosService.getRecordatoriosPendientes) {
-          const pendientes = await recordatoriosService.getRecordatoriosPendientes();
-          
-          if (pendientes.length > 0) {
-            console.log(`🔔 [CRON] ${pendientes.length} recordatorios pendientes`);
-            
-            // Enviar notificaciones push
-            if (pushService.notifyRecordatorio) {
-              for (const recordatorio of pendientes) {
-                try {
-                  await pushService.notifyRecordatorio(recordatorio);
-                  console.log(`   ✅ Push enviado para recordatorio ${recordatorio.id}`);
-                } catch (err) {
-                  console.error(`   ❌ Error enviando push:`, err.message);
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('   ❌ Error verificando recordatorios:', error.message);
-      }
-    });
-    console.log('   ✅ Cron de recordatorios activo (cada 5 minutos)');
-  }
-
-  // ============================================
-  // CRON 3: Limpiar tareas completadas antiguas (cada día a las 3 AM)
-  // ============================================
-  if (tareasService && tareasService.limpiarTareasAntiguas) {
-    cron.schedule('0 3 * * *', async () => {
-      console.log('🧹 [CRON] Limpiando tareas antiguas...');
-      try {
-        const eliminadas = await tareasService.limpiarTareasAntiguas();
-        console.log(`   ✅ ${eliminadas} tareas antiguas eliminadas`);
-      } catch (error) {
-        console.error('   ❌ Error limpiando tareas:', error.message);
-      }
-    });
-    console.log('   ✅ Cron de limpieza activo (diario a las 3 AM)');
-  }
-
-  // ============================================
-  // CRON 4: Generar tareas urgentes cada 30 minutos
-  // ============================================
-  if (tareasService && pushService) {
-    cron.schedule('*/30 * * * *', async () => {
-      try {
-        if (tareasService.getTareasUrgentes) {
-          const urgentes = await tareasService.getTareasUrgentes();
-          
-          if (urgentes.length > 0) {
-            console.log(`⚠️  [CRON] ${urgentes.length} tareas urgentes sin completar`);
-            
-            // Notificar tareas urgentes
-            if (pushService.notifyTareaUrgente) {
-              for (const tarea of urgentes) {
-                try {
-                  await pushService.notifyTareaUrgente(tarea);
-                } catch (err) {
-                  console.error(`   ❌ Error notificando tarea urgente:`, err.message);
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('   ❌ Error verificando tareas urgentes:', error.message);
-      }
-    });
-    console.log('   ✅ Cron de tareas urgentes activo (cada 30 minutos)');
-  }
-
-  console.log('╔═══════════════════════════════════════╗');
-  console.log('✅ Sistema de cron jobs inicializado');
-  console.log('╚═══════════════════════════════════════╝\n');
-}
-
-// ============================================
-// MANEJO DE ERRORES GLOBAL
-// ============================================
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  process.exit(1);
 });
 
 // Graceful shutdown
