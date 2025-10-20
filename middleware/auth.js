@@ -51,7 +51,9 @@ const checkRole = (...allowedRoles) => {
   };
 };
 
-// CAMBIA ESTA LÍNEA:
-module.exports = authMiddleware; // Exporta directamente el middleware
-module.exports.checkRole = checkRole; // Exporta checkRole como propiedad
-module.exports.JWT_SECRET = JWT_SECRET; // Exporta JWT_SECRET como propiedad
+// ✅ EXPORTACIÓN CORRECTA
+module.exports = {
+  authMiddleware,
+  checkRole,
+  JWT_SECRET
+};
