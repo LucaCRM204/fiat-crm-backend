@@ -1,128 +1,100 @@
 const express = require('express');
 const router = express.Router();
-const recordatoriosService = require('../services/recordatorios');
-const { authMiddleware } = require('../middleware/auth');
+const db = require('../db');
+const auth = require('../middleware/auth');
 
-/**
- * GET /api/recordatorios
- * Listar recordatorios del usuario según su rol
- */
-router.get('/', authMiddleware, async (req, res) => {
+// Obtener recordatorios de un lead
+router.get('/lead/:leadId', auth, async (req, res) => {
   try {
-    const recordatorios = await recordatoriosService.listRecordatorios(
-      req.user.id,
-      req.user.role
+    const { leadId } = req.params;
+    const [recordatorios] = await db.query(
+      'SELECT * FROM recordatorios WHERE lead_id = ? ORDER BY fecha DESC, hora DESC',
+      [leadId]
     );
     res.json(recordatorios);
   } catch (error) {
-    console.error('Error listando recordatorios:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error obteniendo recordatorios:', error);
+    res.status(500).json({ error: 'Error al obtener recordatorios' });
   }
 });
 
-/**
- * POST /api/recordatorios
- * Crear nuevo recordatorio
- */
-router.post('/', authMiddleware, async (req, res) => {
+// Crear recordatorio
+router.post('/', auth, async (req, res) => {
   try {
     const { lead_id, fecha, hora, descripcion } = req.body;
-
-    // Validaciones
+    
     if (!lead_id || !fecha || !hora || !descripcion) {
-      return res.status(400).json({ 
-        error: 'Campos requeridos: lead_id, fecha, hora, descripcion' 
-      });
+      return res.status(400).json({ error: 'Todos los campos son requeridos' });
     }
 
-    const recordatorio = await recordatoriosService.createRecordatorio({
-      ...req.body,
-      created_by: req.user.id
-    });
+    const [result] = await db.query(
+      'INSERT INTO recordatorios (lead_id, fecha, hora, descripcion) VALUES (?, ?, ?, ?)',
+      [lead_id, fecha, hora, descripcion]
+    );
 
-    res.status(201).json(recordatorio);
+    const [recordatorio] = await db.query(
+      'SELECT * FROM recordatorios WHERE id = ?',
+      [result.insertId]
+    );
+
+    res.json(recordatorio[0]);
   } catch (error) {
     console.error('Error creando recordatorio:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error al crear recordatorio' });
   }
 });
 
-/**
- * PUT /api/recordatorios/:id
- * Actualizar recordatorio (marcar completado)
- */
-router.put('/:id', authMiddleware, async (req, res) => {
+// Actualizar recordatorio (marcar como completado)
+router.patch('/:id', auth, async (req, res) => {
   try {
-    const recordatorio = await recordatoriosService.updateRecordatorio(
-      parseInt(req.params.id),
-      req.body
+    const { id } = req.params;
+    const { completado } = req.body;
+
+    await db.query(
+      'UPDATE recordatorios SET completado = ? WHERE id = ?',
+      [completado, id]
     );
 
-    if (!recordatorio) {
-      return res.status(404).json({ error: 'Recordatorio no encontrado' });
-    }
+    const [recordatorio] = await db.query(
+      'SELECT * FROM recordatorios WHERE id = ?',
+      [id]
+    );
 
-    res.json(recordatorio);
+    res.json(recordatorio[0]);
   } catch (error) {
     console.error('Error actualizando recordatorio:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error al actualizar recordatorio' });
   }
 });
 
-/**
- * DELETE /api/recordatorios/:id
- * Eliminar recordatorio
- */
-router.delete('/:id', authMiddleware, async (req, res) => {
+// Eliminar recordatorio
+router.delete('/:id', auth, async (req, res) => {
   try {
-    await recordatoriosService.deleteRecordatorio(parseInt(req.params.id));
-    res.json({ ok: true, message: 'Recordatorio eliminado' });
+    const { id } = req.params;
+    await db.query('DELETE FROM recordatorios WHERE id = ?', [id]);
+    res.json({ message: 'Recordatorio eliminado' });
   } catch (error) {
     console.error('Error eliminando recordatorio:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error al eliminar recordatorio' });
   }
 });
 
-/**
- * GET /api/recordatorios/pendientes
- * Obtener recordatorios pendientes (para el sistema de notificaciones)
- */
-router.get('/pendientes', authMiddleware, async (req, res) => {
+// Obtener recordatorios pendientes del usuario actual
+router.get('/pendientes', auth, async (req, res) => {
   try {
-    // Solo admins pueden ver todos los pendientes
-    if (!['owner', 'director'].includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: 'No tienes permisos para ver todos los recordatorios pendientes' 
-      });
-    }
-
-    const pendientes = await recordatoriosService.getRecordatoriosPendientes();
-    res.json(pendientes);
+    const [recordatorios] = await db.query(
+      `SELECT r.*, l.nombre, l.telefono, l.modelo 
+       FROM recordatorios r
+       JOIN leads l ON r.lead_id = l.id
+       WHERE l.assigned_to = ? AND r.completado = FALSE
+       AND CONCAT(r.fecha, ' ', r.hora) <= NOW() + INTERVAL 1 HOUR
+       ORDER BY r.fecha, r.hora`,
+      [req.user.id]
+    );
+    res.json(recordatorios);
   } catch (error) {
     console.error('Error obteniendo recordatorios pendientes:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/recordatorios/lead/:leadId
- * Obtener recordatorios de un lead específico
- */
-router.get('/lead/:leadId', authMiddleware, async (req, res) => {
-  try {
-    const recordatorios = await recordatoriosService.listRecordatorios(
-      req.user.id,
-      req.user.role
-    );
-
-    const leadRecordatorios = recordatorios.filter(
-      r => r.lead_id === parseInt(req.params.leadId)
-    );
-
-    res.json(leadRecordatorios);
-  } catch (error) {
-    console.error('Error obteniendo recordatorios del lead:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error al obtener recordatorios' });
   }
 });
 

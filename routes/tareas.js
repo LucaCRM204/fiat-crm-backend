@@ -1,193 +1,142 @@
 const express = require('express');
 const router = express.Router();
-const tareasService = require('../services/tareas');
-const pushService = require('../services/pushNotifications');
-const { authMiddleware } = require('../middleware/auth');
+const db = require('../db');
+const auth = require('../middleware/auth');
 
-/**
- * GET /api/tareas
- * Listar tareas del usuario según su rol
- */
-router.get('/', authMiddleware, async (req, res) => {
+// Obtener tareas del usuario
+router.get('/mis-tareas', auth, async (req, res) => {
   try {
-    const tareas = await tareasService.listTareas(
-      req.user.id,
-      req.user.role
+    const [tareas] = await db.query(
+      `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
+              u.name as created_by_name
+       FROM tareas_seguimiento t
+       JOIN leads l ON t.lead_id = l.id
+       LEFT JOIN users u ON t.created_by = u.id
+       WHERE t.asignado_a = ?
+       ORDER BY t.completada ASC, t.prioridad ASC, t.fecha_limite ASC`,
+      [req.user.id]
     );
     res.json(tareas);
   } catch (error) {
-    console.error('Error listando tareas:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error obteniendo tareas:', error);
+    res.status(500).json({ error: 'Error al obtener tareas' });
   }
 });
 
-/**
- * POST /api/tareas
- * Crear nueva tarea
- */
-router.post('/', authMiddleware, async (req, res) => {
+// Obtener tareas creadas por el usuario (para supervisores/gerentes)
+router.get('/asignadas', auth, async (req, res) => {
   try {
-    const { 
-      lead_id, 
-      assigned_to, 
-      tipo, 
-      prioridad, 
-      fecha_limite, 
-      descripcion 
-    } = req.body;
+    const [tareas] = await db.query(
+      `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
+              u.name as asignado_nombre
+       FROM tareas_seguimiento t
+       JOIN leads l ON t.lead_id = l.id
+       JOIN users u ON t.asignado_a = u.id
+       WHERE t.created_by = ?
+       ORDER BY t.completada ASC, t.prioridad ASC, t.fecha_limite ASC`,
+      [req.user.id]
+    );
+    res.json(tareas);
+  } catch (error) {
+    console.error('Error obteniendo tareas asignadas:', error);
+    res.status(500).json({ error: 'Error al obtener tareas' });
+  }
+});
 
-    // Validaciones
-    if (!lead_id || !assigned_to || !tipo || !prioridad || !fecha_limite || !descripcion) {
-      return res.status(400).json({ 
-        error: 'Campos requeridos: lead_id, assigned_to, tipo, prioridad, fecha_limite, descripcion' 
-      });
+// Crear tarea
+router.post('/', auth, async (req, res) => {
+  try {
+    const { lead_id, asignado_a, tipo, prioridad, fecha_limite, descripcion, manual } = req.body;
+    
+    if (!lead_id || !asignado_a || !tipo || !fecha_limite || !descripcion) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    // Validar tipo
-    const tiposValidos = ['llamar', 'whatsapp', 'email', 'cotizar', 'seguimiento'];
-    if (!tiposValidos.includes(tipo)) {
-      return res.status(400).json({ 
-        error: `tipo debe ser uno de: ${tiposValidos.join(', ')}` 
-      });
-    }
+    const [result] = await db.query(
+      `INSERT INTO tareas_seguimiento 
+       (lead_id, asignado_a, tipo, prioridad, fecha_limite, descripcion, manual, created_by) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [lead_id, asignado_a, tipo, prioridad || 'media', fecha_limite, descripcion, manual || false, req.user.id]
+    );
 
-    // Validar prioridad
-    const prioridadesValidas = ['alta', 'media', 'baja'];
-    if (!prioridadesValidas.includes(prioridad)) {
-      return res.status(400).json({ 
-        error: `prioridad debe ser uno de: ${prioridadesValidas.join(', ')}` 
-      });
-    }
+    const [tarea] = await db.query(
+      `SELECT t.*, l.nombre, l.telefono, l.modelo, u.name as created_by_name
+       FROM tareas_seguimiento t
+       JOIN leads l ON t.lead_id = l.id
+       LEFT JOIN users u ON t.created_by = u.id
+       WHERE t.id = ?`,
+      [result.insertId]
+    );
 
-    const tarea = await tareasService.createTarea(req.body);
-
-    // Si es prioridad alta, enviar notificación push
-    if (prioridad === 'alta') {
-      try {
-        await pushService.notifyTareaUrgente(tarea);
-      } catch (pushError) {
-        console.error('Error enviando notificación de tarea:', pushError);
-        // No fallar la creación si falla el push
-      }
-    }
-
-    res.status(201).json(tarea);
+    res.json(tarea[0]);
   } catch (error) {
     console.error('Error creando tarea:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error al crear tarea' });
   }
 });
 
-/**
- * PUT /api/tareas/:id/completar
- * Marcar tarea como completada
- */
-router.put('/:id/completar', authMiddleware, async (req, res) => {
+// Completar tarea
+router.patch('/:id/completar', auth, async (req, res) => {
   try {
-    const tarea = await tareasService.completeTarea(parseInt(req.params.id));
-
-    if (!tarea) {
+    const { id } = req.params;
+    
+    // Verificar que la tarea pertenece al usuario
+    const [tarea] = await db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
+    
+    if (tarea.length === 0) {
       return res.status(404).json({ error: 'Tarea no encontrada' });
     }
 
-    res.json(tarea);
-  } catch (error) {
-    console.error('Error completando tarea:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+    const canComplete = tarea[0].asignado_a === req.user.id || 
+                       tarea[0].created_by === req.user.id;
 
-/**
- * GET /api/tareas/urgentes
- * Obtener tareas urgentes sin completar
- */
-router.get('/urgentes', authMiddleware, async (req, res) => {
-  try {
-    const urgentes = await tareasService.getTareasUrgentes();
-    res.json(urgentes);
-  } catch (error) {
-    console.error('Error obteniendo tareas urgentes:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * POST /api/tareas/generar-automaticas
- * Forzar generación de tareas automáticas (solo admins)
- */
-router.post('/generar-automaticas', authMiddleware, async (req, res) => {
-  try {
-    // Solo admins pueden forzar generación
-    if (!['owner', 'director'].includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: 'No tienes permisos para generar tareas automáticas' 
-      });
+    if (!canComplete) {
+      return res.status(403).json({ error: 'No tienes permiso para completar esta tarea' });
     }
 
-    const tareas = await tareasService.generarTareasAutomaticas();
+    await db.query(
+      'UPDATE tareas_seguimiento SET completada = TRUE, completed_at = NOW() WHERE id = ?',
+      [id]
+    );
+
+    const [tareaActualizada] = await db.query(
+      `SELECT t.*, l.nombre, l.telefono, l.modelo
+       FROM tareas_seguimiento t
+       JOIN leads l ON t.lead_id = l.id
+       WHERE t.id = ?`,
+      [id]
+    );
+
+    res.json(tareaActualizada[0]);
+  } catch (error) {
+    console.error('Error completando tarea:', error);
+    res.status(500).json({ error: 'Error al completar tarea' });
+  }
+});
+
+// Eliminar tarea
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
     
-    res.json({ 
-      ok: true, 
-      message: `${tareas.length} tareas generadas`,
-      tareas 
-    });
+    const [tarea] = await db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
+    
+    if (tarea.length === 0) {
+      return res.status(404).json({ error: 'Tarea no encontrada' });
+    }
+
+    const canDelete = tarea[0].created_by === req.user.id || 
+                     ['owner', 'director', 'gerente'].includes(req.user.role);
+
+    if (!canDelete) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar esta tarea' });
+    }
+
+    await db.query('DELETE FROM tareas_seguimiento WHERE id = ?', [id]);
+    res.json({ message: 'Tarea eliminada' });
   } catch (error) {
-    console.error('Error generando tareas automáticas:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/tareas/lead/:leadId
- * Obtener tareas de un lead específico
- */
-router.get('/lead/:leadId', authMiddleware, async (req, res) => {
-  try {
-    const todasLasTareas = await tareasService.listTareas(
-      req.user.id,
-      req.user.role
-    );
-
-    const leadTareas = todasLasTareas.filter(
-      t => t.lead_id === parseInt(req.params.leadId)
-    );
-
-    res.json(leadTareas);
-  } catch (error) {
-    console.error('Error obteniendo tareas del lead:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/tareas/stats
- * Obtener estadísticas de tareas del usuario
- */
-router.get('/stats', authMiddleware, async (req, res) => {
-  try {
-    const tareas = await tareasService.listTareas(
-      req.user.id,
-      req.user.role
-    );
-
-    const stats = {
-      total: tareas.length,
-      alta: tareas.filter(t => t.prioridad === 'alta').length,
-      media: tareas.filter(t => t.prioridad === 'media').length,
-      baja: tareas.filter(t => t.prioridad === 'baja').length,
-      por_tipo: {
-        llamar: tareas.filter(t => t.tipo === 'llamar').length,
-        whatsapp: tareas.filter(t => t.tipo === 'whatsapp').length,
-        email: tareas.filter(t => t.tipo === 'email').length,
-        cotizar: tareas.filter(t => t.tipo === 'cotizar').length,
-        seguimiento: tareas.filter(t => t.tipo === 'seguimiento').length,
-      }
-    };
-
-    res.json(stats);
-  } catch (error) {
-    console.error('Error obteniendo estadísticas de tareas:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error eliminando tarea:', error);
+    res.status(500).json({ error: 'Error al eliminar tarea' });
   }
 });
 

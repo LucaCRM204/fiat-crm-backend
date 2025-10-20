@@ -12,12 +12,20 @@ const leadsRouter = require('./routes/leads');
 const presupuestosRouter = require('./routes/presupuestos');
 
 // Rutas opcionales con manejo de errores
-let usersRouter, recordatoriosRouter, cotizacionesRouter, tareasRouter, pushRouter, metasRouter;
+let usersRouter, notasRouter, recordatoriosRouter, cotizacionesRouter, tareasRouter, pushRouter, metasRouter;
+
 try { 
   usersRouter = require('./routes/users'); 
 } catch (err) { 
   console.warn('⚠️ Ruta users no disponible:', err.message);
   usersRouter = null; 
+}
+
+try {
+  notasRouter = require('./routes/notas');
+} catch (err) {
+  console.warn('⚠️ Ruta notas no disponible:', err.message);
+  notasRouter = null;
 }
 
 try {
@@ -74,7 +82,7 @@ const origins = (process.env.CORS_ORIGIN || '').split(',').map(s=>s.trim()).filt
 const corsOpts = {
   origin: true,
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token','Accept'],
   optionsSuccessStatus: 200,
 };
@@ -82,13 +90,12 @@ const corsOpts = {
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
 
-// ← AGREGAR ESTAS LÍNEAS AQUÍ
+// Agregar pool de DB a req
 const { pool } = require('./db');
 app.use((req, res, next) => {
   req.db = pool;
   next();
 });
-// FIN DEL CÓDIGO NUEVO
 
 // ============================================
 // RUTAS PRINCIPALES
@@ -100,11 +107,36 @@ app.use('/api/presupuestos', presupuestosRouter);
 app.use('/api/webhooks', require('./routes/webhooks'));
 
 // Rutas opcionales (solo si existen)
-if (usersRouter) app.use('/api/users', usersRouter);
-if (recordatoriosRouter) app.use('/api/recordatorios', recordatoriosRouter);
-if (cotizacionesRouter) app.use('/api/cotizaciones', cotizacionesRouter);
-if (tareasRouter) app.use('/api/tareas', tareasRouter);
-if (pushRouter) app.use('/api/push', pushRouter);
+if (usersRouter) {
+  app.use('/api/users', usersRouter);
+  console.log('✅ Ruta /api/users registrada');
+}
+
+if (notasRouter) {
+  app.use('/api/notas', notasRouter);
+  console.log('✅ Ruta /api/notas registrada');
+}
+
+if (recordatoriosRouter) {
+  app.use('/api/recordatorios', recordatoriosRouter);
+  console.log('✅ Ruta /api/recordatorios registrada');
+}
+
+if (cotizacionesRouter) {
+  app.use('/api/cotizaciones', cotizacionesRouter);
+  console.log('✅ Ruta /api/cotizaciones registrada');
+}
+
+if (tareasRouter) {
+  app.use('/api/tareas', tareasRouter);
+  console.log('✅ Ruta /api/tareas registrada');
+}
+
+if (pushRouter) {
+  app.use('/api/push', pushRouter);
+  console.log('✅ Ruta /api/push registrada');
+}
+
 if (metasRouter) {
   try {
     app.use('/api/metas', metasRouter);
@@ -119,8 +151,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ 
     ok: true, 
     ts: new Date().toISOString(),
-    version: '1.2.0',
+    version: '1.3.0',
     features: {
+      users: !!usersRouter,
+      notas: !!notasRouter,
       recordatorios: !!recordatoriosRouter,
       cotizaciones: !!cotizacionesRouter,
       tareas: !!tareasRouter,
@@ -134,12 +168,13 @@ app.get('/api/health', (_req, res) => {
 app.get('/', (_req, res) => {
   res.json({ 
     message: 'Alluma CRM Backend API', 
-    version: '1.2.0',
+    version: '1.3.0',
     endpoints: {
       auth: '/api/auth',
-      users: '/api/users',
+      users: usersRouter ? '/api/users' : null,
       leads: '/api/leads',
       presupuestos: '/api/presupuestos',
+      notas: notasRouter ? '/api/notas' : null,
       recordatorios: recordatoriosRouter ? '/api/recordatorios' : null,
       cotizaciones: cotizacionesRouter ? '/api/cotizaciones' : null,
       tareas: tareasRouter ? '/api/tareas' : null,
@@ -151,6 +186,24 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Manejo de rutas no encontradas
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Ruta no encontrada',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Manejo de errores global
+app.use((err, req, res, next) => {
+  console.error('❌ Error en servidor:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Error interno del servidor',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
@@ -159,13 +212,14 @@ const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
   console.log('╔═══════════════════════════════════════╗');
-  console.log(`🚀 Alluma CRM Backend v1.2.0`);
+  console.log(`🚀 Alluma CRM Backend v1.3.0`);
   console.log(`📡 Servidor escuchando en puerto: ${PORT}`);
   console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
   console.log('╠═══════════════════════════════════════╣');
   console.log('📋 Funcionalidades disponibles:');
-  console.log(`   ✅ Auth & Users`);
-  console.log(`   ✅ Leads & Presupuestos`);
+  console.log(`   ✅ Auth & Leads & Presupuestos`);
+  console.log(`   ${usersRouter ? '✅' : '⚠️'} Users`);
+  console.log(`   ${notasRouter ? '✅' : '⚠️'} Notas Internas`);
   console.log(`   ${recordatoriosRouter ? '✅' : '⚠️'} Recordatorios`);
   console.log(`   ${cotizacionesRouter ? '✅' : '⚠️'} Cotizaciones`);
   console.log(`   ${tareasRouter ? '✅' : '⚠️'} Tareas`);
