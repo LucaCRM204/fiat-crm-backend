@@ -53,8 +53,9 @@ router.post('/login', async (req, res) => {
     // Responder con token y datos del usuario
     console.log(`✅ Login exitoso: ${email} (${user.role})`);
     res.json({
-      token,
-      user: {
+        ok: true,
+        token,
+        user: {
         id: user.id,
         name: user.name,
         email: user.email,
