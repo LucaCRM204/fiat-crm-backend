@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { pool } = require('../db');
 const { authMiddleware, checkRole } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticación
@@ -240,13 +241,16 @@ router.put('/:id', async (req, res) => {
       historial = [];
     }
 
-    // Si cambió el estado, agregar al historial
+    // Si cambió el estado, agregar al historial y actualizar last_status_change
     if (updates.estado && updates.estado !== currentLead[0].estado) {
       historial.push({
         estado: updates.estado,
         timestamp: new Date().toISOString(),
         usuario: req.user.name
       });
+      
+      // Actualizar last_status_change
+      updates.last_status_change = new Date();
     }
 
     // Si cambió el vendedor, agregar al historial
@@ -280,7 +284,8 @@ router.put('/:id', async (req, res) => {
       fuente: 'fuente',
       fecha: 'fecha',
       vendedor: 'assigned_to',
-      equipo: 'equipo'
+      equipo: 'equipo',
+      last_status_change: 'last_status_change'
     };
 
     Object.entries(updates).forEach(([key, value]) => {
