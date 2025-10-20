@@ -1,159 +1,313 @@
-require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const cors = require('cors');
-const mysql = require('mysql2/promise');
+const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const cron = require('node-cron');
+require('dotenv').config();
+
+const authRouter = require('./routes/auth');
+const leadsRouter = require('./routes/leads');
+const presupuestosRouter = require('./routes/presupuestos');
+
+// Rutas opcionales con manejo de errores
+let usersRouter, recordatoriosRouter, cotizacionesRouter, tareasRouter, pushRouter, metasRouter;
+try { 
+  usersRouter = require('./routes/users'); 
+} catch (err) { 
+  console.warn('⚠️ Ruta users no disponible:', err.message);
+  usersRouter = null; 
+}
+
+try {
+  recordatoriosRouter = require('./routes/recordatorios');
+} catch (err) {
+  console.warn('⚠️ Ruta recordatorios no disponible:', err.message);
+  recordatoriosRouter = null;
+}
+
+try {
+  cotizacionesRouter = require('./routes/cotizaciones');
+} catch (err) {
+  console.warn('⚠️ Ruta cotizaciones no disponible:', err.message);
+  cotizacionesRouter = null;
+}
+
+try {
+  tareasRouter = require('./routes/tareas');
+} catch (err) {
+  console.warn('⚠️ Ruta tareas no disponible:', err.message);
+  tareasRouter = null;
+}
+
+try {
+  pushRouter = require('./routes/push');
+} catch (err) {
+  console.warn('⚠️ Ruta push no disponible:', err.message);
+  pushRouter = null;
+}
+
+try {
+  metasRouter = require('./routes/metas');
+} catch (err) {
+  console.warn('⚠️ Ruta metas no disponible:', err.message);
+  metasRouter = null;
+}
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'https://crm4alluma.com.ar',
-  'https://www.crm4alluma.com.ar',
-  process.env.CORS_ORIGIN ? `https://${process.env.CORS_ORIGIN.replace(/^https?:\/\//, '')}` : null,
-  process.env.FRONTEND_URL ? `https://${process.env.FRONTEND_URL.replace(/^https?:\/\//, '')}` : null
-].filter(Boolean);
+// Proxy (necesario para cookie Secure detrás de Railway)
+app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: function(origin, callback) {
-    // Permitir requests sin origin (Postman, apps móviles, etc)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.warn(`⚠️  Origen bloqueado por CORS: ${origin}`);
-      callback(new Error('No permitido por CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
+// Middlewares
+app.use(helmet());
 app.use(express.json());
+app.use(cookieParser());
+app.use(compression());
+app.use(morgan('dev'));
 
-// Database connection pool
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'alluma_crm',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  connectTimeout: 60000 // 60 segundos
-});
+// CORS configuration
+const origins = (process.env.CORS_ORIGIN || '').split(',').map(s=>s.trim()).filter(Boolean);
+const corsOpts = {
+  origin: true, // Permite todos los orígenes temporalmente
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token','Accept'],
+  optionsSuccessStatus: 200,
+};
 
-// Test database connection
-pool.getConnection()
-  .then(connection => {
-    console.log('✅ Base de datos conectada correctamente');
-    console.log(`📊 Host: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
-    connection.release();
-  })
-  .catch(err => {
-    console.error('❌ Error conectando a la base de datos:', err);
-    console.error('Detalles del error:', {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      user: process.env.DB_USER,
-      database: process.env.DB_NAME
-    });
-  });
+app.use(cors(corsOpts));
+app.options('*', cors(corsOpts));
 
-// Make pool available to routes
-app.use((req, res, next) => {
-  req.db = pool;
-  next();
-});
+// ============================================
+// RUTAS PRINCIPALES
+// ============================================
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/leads', require('./routes/leads'));
-app.use('/api/presupuestos', require('./routes/presupuestos'));
+app.use('/api/auth', authRouter);
+app.use('/api/leads', leadsRouter);
+app.use('/api/presupuestos', presupuestosRouter);
+app.use('/api/webhooks', require('./routes/webhooks'));
+
+// Rutas opcionales (solo si existen)
+if (usersRouter) app.use('/api/users', usersRouter);
+if (recordatoriosRouter) app.use('/api/recordatorios', recordatoriosRouter);
+if (cotizacionesRouter) app.use('/api/cotizaciones', cotizacionesRouter);
+if (tareasRouter) app.use('/api/tareas', tareasRouter);
+if (pushRouter) app.use('/api/push', pushRouter);
+if (metasRouter) app.use('/api/metas', metasRouter);
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({ 
-    status: 'ok', 
-    message: 'FIAT CRM API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    database: process.env.DB_NAME
+    ok: true, 
+    ts: new Date().toISOString(),
+    version: '1.2.0',
+    features: {
+      recordatorios: !!recordatoriosRouter,
+      cotizaciones: !!cotizacionesRouter,
+      tareas: !!tareasRouter,
+      push: !!pushRouter,
+      metas: !!metasRouter,
+    }
   });
 });
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    message: 'FIAT CRM Backend API',
-    version: '1.0.0',
+// Ruta raíz
+app.get('/', (_req, res) => {
+  res.json({ 
+    message: 'Alluma CRM Backend API', 
+    version: '1.2.0',
     endpoints: {
-      health: '/api/health',
       auth: '/api/auth',
       users: '/api/users',
       leads: '/api/leads',
-      presupuestos: '/api/presupuestos'
+      presupuestos: '/api/presupuestos',
+      recordatorios: recordatoriosRouter ? '/api/recordatorios' : null,
+      cotizaciones: cotizacionesRouter ? '/api/cotizaciones' : null,
+      tareas: tareasRouter ? '/api/tareas' : null,
+      push: pushRouter ? '/api/push' : null,
+      metas: metasRouter ? '/api/metas' : null,
+      webhooks: '/api/webhooks',
+      health: '/api/health',
     }
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Endpoint no encontrado',
-    path: req.path,
-    method: req.method
-  });
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log('╔═══════════════════════════════════════╗');
+  console.log(`🚀 Alluma CRM Backend v1.2.0`);
+  console.log(`📡 Servidor escuchando en puerto: ${PORT}`);
+  console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
+  console.log('╠═══════════════════════════════════════╣');
+  console.log('📋 Funcionalidades disponibles:');
+  console.log(`   ✅ Auth & Users`);
+  console.log(`   ✅ Leads & Presupuestos`);
+  console.log(`   ${recordatoriosRouter ? '✅' : '⚠️'} Recordatorios`);
+  console.log(`   ${cotizacionesRouter ? '✅' : '⚠️'} Cotizaciones`);
+  console.log(`   ${tareasRouter ? '✅' : '⚠️'} Tareas`);
+  console.log(`   ${pushRouter ? '✅' : '⚠️'} Push Notifications`);
+  console.log(`   ${metasRouter ? '✅' : '⚠️'} Metas`);
+  console.log('╚═══════════════════════════════════════╝');
+  
+  // Iniciar cron jobs
+  initCronJobs();
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.stack);
+// ============================================
+// CRON JOBS
+// ============================================
+
+function initCronJobs() {
+  console.log('⏰ Iniciando cron jobs...');
+
+  // Importar servicios
+  let tareasService, recordatoriosService, pushService;
   
-  if (err.message === 'No permitido por CORS') {
-    return res.status(403).json({ 
-      error: 'Acceso bloqueado por CORS',
-      origin: req.headers.origin
-    });
+  try {
+    tareasService = require('./services/tareas');
+  } catch (err) {
+    console.warn('   ⚠️  Servicio de tareas no disponible');
   }
-  
-  res.status(500).json({ 
-    error: 'Error interno del servidor',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
+
+  try {
+    recordatoriosService = require('./services/recordatorios');
+  } catch (err) {
+    console.warn('   ⚠️  Servicio de recordatorios no disponible');
+  }
+
+  try {
+    pushService = require('./services/pushNotifications');
+  } catch (err) {
+    console.warn('   ⚠️  Servicio de push no disponible');
+  }
+
+  // ============================================
+  // CRON 1: Generar tareas automáticas cada hora
+  // ============================================
+  if (tareasService && tareasService.generarTareasAutomaticas) {
+    cron.schedule('0 * * * *', async () => {
+      console.log('📋 [CRON] Generando tareas automáticas...');
+      try {
+        const tareas = await tareasService.generarTareasAutomaticas();
+        console.log(`   ✅ ${tareas.length} tareas generadas`);
+      } catch (error) {
+        console.error('   ❌ Error generando tareas:', error.message);
+      }
+    });
+    console.log('   ✅ Cron de tareas automáticas activo (cada hora)');
+  }
+
+  // ============================================
+  // CRON 2: Verificar recordatorios pendientes cada 5 minutos
+  // ============================================
+  if (recordatoriosService && pushService) {
+    cron.schedule('*/5 * * * *', async () => {
+      try {
+        if (recordatoriosService.getRecordatoriosPendientes) {
+          const pendientes = await recordatoriosService.getRecordatoriosPendientes();
+          
+          if (pendientes.length > 0) {
+            console.log(`🔔 [CRON] ${pendientes.length} recordatorios pendientes`);
+            
+            // Enviar notificaciones push
+            if (pushService.notifyRecordatorio) {
+              for (const recordatorio of pendientes) {
+                try {
+                  await pushService.notifyRecordatorio(recordatorio);
+                  console.log(`   ✅ Push enviado para recordatorio ${recordatorio.id}`);
+                } catch (err) {
+                  console.error(`   ❌ Error enviando push:`, err.message);
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('   ❌ Error verificando recordatorios:', error.message);
+      }
+    });
+    console.log('   ✅ Cron de recordatorios activo (cada 5 minutos)');
+  }
+
+  // ============================================
+  // CRON 3: Limpiar tareas completadas antiguas (cada día a las 3 AM)
+  // ============================================
+  if (tareasService && tareasService.limpiarTareasAntiguas) {
+    cron.schedule('0 3 * * *', async () => {
+      console.log('🧹 [CRON] Limpiando tareas antiguas...');
+      try {
+        const eliminadas = await tareasService.limpiarTareasAntiguas();
+        console.log(`   ✅ ${eliminadas} tareas antiguas eliminadas`);
+      } catch (error) {
+        console.error('   ❌ Error limpiando tareas:', error.message);
+      }
+    });
+    console.log('   ✅ Cron de limpieza activo (diario a las 3 AM)');
+  }
+
+  // ============================================
+  // CRON 4: Generar tareas urgentes cada 30 minutos
+  // ============================================
+  if (tareasService && pushService) {
+    cron.schedule('*/30 * * * *', async () => {
+      try {
+        if (tareasService.getTareasUrgentes) {
+          const urgentes = await tareasService.getTareasUrgentes();
+          
+          if (urgentes.length > 0) {
+            console.log(`⚠️  [CRON] ${urgentes.length} tareas urgentes sin completar`);
+            
+            // Notificar tareas urgentes
+            if (pushService.notifyTareaUrgente) {
+              for (const tarea of urgentes) {
+                try {
+                  await pushService.notifyTareaUrgente(tarea);
+                } catch (err) {
+                  console.error(`   ❌ Error notificando tarea urgente:`, err.message);
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('   ❌ Error verificando tareas urgentes:', error.message);
+      }
+    });
+    console.log('   ✅ Cron de tareas urgentes activo (cada 30 minutos)');
+  }
+
+  console.log('╔═══════════════════════════════════════╗');
+  console.log('✅ Sistema de cron jobs inicializado');
+  console.log('╚═══════════════════════════════════════╝\n');
+}
+
+// ============================================
+// MANEJO DE ERRORES GLOBAL
+// ============================================
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-╔═══════════════════════════════════════╗
-║     FIAT CRM - Backend Activo         ║
-║     Puerto: ${PORT}                         ║
-║     Base de datos: ${process.env.DB_NAME || 'alluma_crm'}       ║
-║     Entorno: ${process.env.NODE_ENV || 'development'}        ║
-║     CORS: ${allowedOrigins.length} orígenes permitidos  ║
-╚═══════════════════════════════════════╝
-  `);
-  console.log('🌐 Orígenes permitidos:', allowedOrigins);
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('🛑 SIGTERM recibido, cerrando servidor...');
-  await pool.end();
+process.on('SIGTERM', () => {
+  console.log('🔴 SIGTERM recibido. Cerrando servidor...');
   process.exit(0);
 });
-// Iniciar bot de WhatsApp
-const { startBot } = require('./whatsapp-bot/bot');
 
-if (process.env.START_WHATSAPP_BOT === 'true') {
-  startBot().catch(err => {
-    console.error('Error iniciando bot:', err);
-  });
-}
-module.exports = app;
+process.on('SIGINT', () => {
+  console.log('\n🔴 SIGINT recibido. Cerrando servidor...');
+  process.exit(0);
+});

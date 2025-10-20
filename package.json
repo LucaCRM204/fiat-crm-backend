@@ -1,30 +1,59 @@
 {
-  "name": "fiat-crm-backend",
+  "name": "alluma-crm-backend",
   "version": "1.0.0",
-  "description": "Backend para FIAT CRM",
+  "description": "Backend API para Alluma CRM - Sistema de gestión para concesionarias",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "engines": {
-    "node": "20.x",
-    "npm": ">=8.0.0"
+    "dev": "nodemon server.js",
+    "setup": "node setup-db.js",
+    "seed": "node seed-data.js",
+    "test": "jest",
+    "build": "echo 'No build step required for Node.js backend'"
   },
   "dependencies": {
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.20",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^6.10.0",
+    "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.15.1",
+    "morgan": "^1.10.0",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.4",
+    "node-cron": "^4.2.1",
     "pdfkit": "^0.17.2",
-    "pino": "^10.0.0",
-    "qrcode-terminal": "^0.12.0"
+    "sqlite3": "^5.1.7",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+    "jest": "^29.6.2",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "crm",
+    "leads",
+    "sales",
+    "concesionaria",
+    "alluma"
+  ],
+  "author": "Alluma Publicidad",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LucaCRM204/alluma-crm-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LucaCRM204/alluma-crm-backend/issues"
+  },
+  "homepage": "https://github.com/LucaCRM204/alluma-crm-backend#readme"
 }
