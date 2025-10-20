@@ -1,93 +1,54 @@
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET, authMiddleware } = require('../middleware/auth');
+const JWT_SECRET = process.env.JWT_SECRET || 'alluma_crm_secret_key_2024';
 
-// Login
-router.post('/login', async (req, res) => {
+const authMiddleware = async (req, res, next) => {
   try {
-    const { email, password, allowInactiveUsers } = req.body;
-
-    console.log('🔐 Intento de login:', email);
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+    const authHeader = req.header('Authorization');
+    
+    if (!authHeader) {
+      return res.status(401).json({ error: 'No se proporcionó token de autenticación' });
     }
-
-    // Buscar usuario
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ error: 'Token inválido' });
+    }
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
     const [users] = await req.db.query(
-      'SELECT * FROM users WHERE email = ?',
-      [email]
+      'SELECT id, name, email, role, reportsTo, active FROM users WHERE id = ?',
+      [decoded.userId]
     );
-
     if (users.length === 0) {
-      console.log('❌ Usuario no encontrado:', email);
-      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+      return res.status(401).json({ error: 'Usuario no encontrado' });
     }
-
-    const user = users[0];
-
-    // Verificar contraseña
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      console.log('❌ Contraseña incorrecta para:', email);
-      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    req.user = users[0];
+    next();
+  } catch (error) {
+    console.error('Error en autenticación:', error);
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Token inválido' });
     }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expirado. Por favor inicia sesión nuevamente.' });
+    }
+    res.status(500).json({ error: 'Error en la autenticación' });
+  }
+};
 
-    // Verificar si está activo (a menos que se permita usuarios inactivos)
-    if (!allowInactiveUsers && !user.active) {
-      console.log('⚠️ Usuario inactivo:', email);
-      return res.status(401).json({ 
-        error: 'Tu cuenta está desactivada. Contacta al administrador para más información.' 
+const checkRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: 'No tienes permisos para realizar esta acción',
+        requiredRoles: allowedRoles,
+        yourRole: req.user.role
       });
     }
+    next();
+  };
+};
 
-    // Generar token
-    const token = jwt.sign(
-      { 
-        userId: user.id, 
-        email: user.email, 
-        role: user.role 
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    // Retornar datos del usuario (sin password)
-    const userData = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      reportsTo: user.reportsTo,
-      active: user.active
-    };
-
-    console.log('✅ Login exitoso:', email, '- Rol:', user.role);
-
-    res.json({
-      ok: true,
-      token,
-      user: userData
-    });
-
-  } catch (error) {
-    console.error('❌ Error en login:', error);
-    res.status(500).json({ error: 'Error en el servidor al procesar el login' });
-  }
-});
-
-// Logout
-router.post('/logout', authMiddleware, async (req, res) => {
-  console.log('👋 Logout:', req.user.email);
-  res.json({ ok: true, message: 'Sesión cerrada correctamente' });
-});
-
-// Verificar token
-router.get('/verify', authMiddleware, async (req, res) => {
-  res.json({ ok: true, user: req.user });
-});
-
-module.exports = router;
+module.exports = { authMiddleware, checkRole, JWT_SECRET };
