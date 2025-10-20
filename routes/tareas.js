@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const auth = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
 
 // Obtener tareas del usuario
-router.get('/mis-tareas', auth, async (req, res) => {
+router.get('/mis-tareas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const [tareas] = await db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
@@ -24,7 +24,7 @@ router.get('/mis-tareas', auth, async (req, res) => {
 });
 
 // Obtener tareas creadas por el usuario (para supervisores/gerentes)
-router.get('/asignadas', auth, async (req, res) => {
+router.get('/asignadas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const [tareas] = await db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
@@ -44,7 +44,7 @@ router.get('/asignadas', auth, async (req, res) => {
 });
 
 // Crear tarea
-router.post('/', auth, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { lead_id, asignado_a, tipo, prioridad, fecha_limite, descripcion, manual } = req.body;
     
@@ -76,7 +76,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Completar tarea
-router.patch('/:id/completar', auth, async (req, res) => {
+router.patch('/:id/completar', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { id } = req.params;
     
@@ -115,7 +115,7 @@ router.patch('/:id/completar', auth, async (req, res) => {
 });
 
 // Eliminar tarea
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { id } = req.params;
     

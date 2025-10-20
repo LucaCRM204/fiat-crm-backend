@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const auth = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
 
 // Obtener notas de un lead
-router.get('/lead/:leadId', auth, async (req, res) => {
+router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { leadId } = req.params;
     const [notas] = await db.query(
@@ -23,7 +23,7 @@ router.get('/lead/:leadId', auth, async (req, res) => {
 });
 
 // Crear nota interna
-router.post('/', auth, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { lead_id, texto } = req.body;
     
@@ -52,7 +52,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Eliminar nota
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { id } = req.params;
     

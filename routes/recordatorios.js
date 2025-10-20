@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const auth = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
 
 // Obtener recordatorios de un lead
-router.get('/lead/:leadId', auth, async (req, res) => {
+router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { leadId } = req.params;
     const [recordatorios] = await db.query(
@@ -19,7 +19,7 @@ router.get('/lead/:leadId', auth, async (req, res) => {
 });
 
 // Crear recordatorio
-router.post('/', auth, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { lead_id, fecha, hora, descripcion } = req.body;
     
@@ -45,7 +45,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // Actualizar recordatorio (marcar como completado)
-router.patch('/:id', auth, async (req, res) => {
+router.patch('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { id } = req.params;
     const { completado } = req.body;
@@ -68,7 +68,7 @@ router.patch('/:id', auth, async (req, res) => {
 });
 
 // Eliminar recordatorio
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { id } = req.params;
     await db.query('DELETE FROM recordatorios WHERE id = ?', [id]);
@@ -80,7 +80,7 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // Obtener recordatorios pendientes del usuario actual
-router.get('/pendientes', auth, async (req, res) => {
+router.get('/pendientes', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const [recordatorios] = await db.query(
       `SELECT r.*, l.nombre, l.telefono, l.modelo 
