@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const auth = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
 const webpush = require('web-push');
 
 // Configurar VAPID keys (genera estas con: npx web-push generate-vapid-keys)
@@ -12,7 +12,7 @@ webpush.setVapidDetails(
 );
 
 // Guardar suscripción
-router.post('/subscribe', auth, async (req, res) => {
+router.post('/subscribe', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { endpoint, keys } = req.body;
     
@@ -35,7 +35,7 @@ router.post('/subscribe', auth, async (req, res) => {
 });
 
 // Enviar notificación a un usuario
-router.post('/send', auth, async (req, res) => {
+router.post('/send', authMiddleware, async (req, res) => { // ✅ CAMBIADO
   try {
     const { userId, title, body, data } = req.body;
 
