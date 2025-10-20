@@ -50,8 +50,10 @@ try {
 
 try {
   metasRouter = require('./routes/metas');
+  console.log('✅ Módulo metas cargado correctamente');
 } catch (err) {
   console.warn('⚠️ Ruta metas no disponible:', err.message);
+  console.error('   Detalle del error:', err);
   metasRouter = null;
 }
 
@@ -70,7 +72,7 @@ app.use(morgan('dev'));
 // CORS configuration
 const origins = (process.env.CORS_ORIGIN || '').split(',').map(s=>s.trim()).filter(Boolean);
 const corsOpts = {
-  origin: true, // Permite todos los orígenes temporalmente
+  origin: true,
   credentials: true,
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token','Accept'],
@@ -79,6 +81,14 @@ const corsOpts = {
 
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
+
+// ← AGREGAR ESTAS LÍNEAS AQUÍ
+const { pool } = require('./db');
+app.use((req, res, next) => {
+  req.db = pool;
+  next();
+});
+// FIN DEL CÓDIGO NUEVO
 
 // ============================================
 // RUTAS PRINCIPALES
@@ -95,7 +105,14 @@ if (recordatoriosRouter) app.use('/api/recordatorios', recordatoriosRouter);
 if (cotizacionesRouter) app.use('/api/cotizaciones', cotizacionesRouter);
 if (tareasRouter) app.use('/api/tareas', tareasRouter);
 if (pushRouter) app.use('/api/push', pushRouter);
-if (metasRouter) app.use('/api/metas', metasRouter);
+if (metasRouter) {
+  try {
+    app.use('/api/metas', metasRouter);
+    console.log('✅ Ruta /api/metas registrada');
+  } catch (err) {
+    console.error('❌ Error registrando ruta metas:', err.message);
+  }
+}
 
 // Health check
 app.get('/api/health', (_req, res) => {
