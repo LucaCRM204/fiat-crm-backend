@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
+const { authMiddleware } = require('../middleware/auth');
 const webpush = require('web-push');
 
 // Configurar VAPID keys (genera estas con: npx web-push generate-vapid-keys)
@@ -12,7 +11,7 @@ webpush.setVapidDetails(
 );
 
 // Guardar suscripción
-router.post('/subscribe', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.post('/subscribe', authMiddleware, async (req, res) => {
   try {
     const { endpoint, keys } = req.body;
     
@@ -20,7 +19,7 @@ router.post('/subscribe', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(400).json({ error: 'Datos de suscripción incompletos' });
     }
 
-    await db.query(
+    await req.db.query(
       `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE p256dh = VALUES(p256dh), auth = VALUES(auth)`,
@@ -35,11 +34,11 @@ router.post('/subscribe', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Enviar notificación a un usuario
-router.post('/send', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.post('/send', authMiddleware, async (req, res) => {
   try {
     const { userId, title, body, data } = req.body;
 
-    const [subscriptions] = await db.query(
+    const [subscriptions] = await req.db.query(
       'SELECT * FROM push_subscriptions WHERE user_id = ?',
       [userId]
     );
@@ -56,7 +55,7 @@ router.post('/send', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       }, payload).catch(error => {
         // Si la suscripción es inválida, eliminarla
         if (error.statusCode === 410) {
-          db.query('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+          req.db.query('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
         }
       });
     });

@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
+const { authMiddleware } = require('../middleware/auth');
 
 // Obtener tareas del usuario
-router.get('/mis-tareas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.get('/mis-tareas', authMiddleware, async (req, res) => {
   try {
-    const [tareas] = await db.query(
+    const [tareas] = await req.db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
               u.name as created_by_name
        FROM tareas_seguimiento t
@@ -24,9 +23,9 @@ router.get('/mis-tareas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Obtener tareas creadas por el usuario (para supervisores/gerentes)
-router.get('/asignadas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.get('/asignadas', authMiddleware, async (req, res) => {
   try {
-    const [tareas] = await db.query(
+    const [tareas] = await req.db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo, l.estado as lead_estado,
               u.name as asignado_nombre
        FROM tareas_seguimiento t
@@ -44,7 +43,7 @@ router.get('/asignadas', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Crear tarea
-router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const { lead_id, asignado_a, tipo, prioridad, fecha_limite, descripcion, manual } = req.body;
     
@@ -52,14 +51,14 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    const [result] = await db.query(
+    const [result] = await req.db.query(
       `INSERT INTO tareas_seguimiento 
        (lead_id, asignado_a, tipo, prioridad, fecha_limite, descripcion, manual, created_by) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [lead_id, asignado_a, tipo, prioridad || 'media', fecha_limite, descripcion, manual || false, req.user.id]
     );
 
-    const [tarea] = await db.query(
+    const [tarea] = await req.db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo, u.name as created_by_name
        FROM tareas_seguimiento t
        JOIN leads l ON t.lead_id = l.id
@@ -76,12 +75,12 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Completar tarea
-router.patch('/:id/completar', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.patch('/:id/completar', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     
     // Verificar que la tarea pertenece al usuario
-    const [tarea] = await db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
+    const [tarea] = await req.db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
     
     if (tarea.length === 0) {
       return res.status(404).json({ error: 'Tarea no encontrada' });
@@ -94,12 +93,12 @@ router.patch('/:id/completar', authMiddleware, async (req, res) => { // ✅ CAMB
       return res.status(403).json({ error: 'No tienes permiso para completar esta tarea' });
     }
 
-    await db.query(
+    await req.db.query(
       'UPDATE tareas_seguimiento SET completada = TRUE, completed_at = NOW() WHERE id = ?',
       [id]
     );
 
-    const [tareaActualizada] = await db.query(
+    const [tareaActualizada] = await req.db.query(
       `SELECT t.*, l.nombre, l.telefono, l.modelo
        FROM tareas_seguimiento t
        JOIN leads l ON t.lead_id = l.id
@@ -115,11 +114,11 @@ router.patch('/:id/completar', authMiddleware, async (req, res) => { // ✅ CAMB
 });
 
 // Eliminar tarea
-router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     
-    const [tarea] = await db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
+    const [tarea] = await req.db.query('SELECT * FROM tareas_seguimiento WHERE id = ?', [id]);
     
     if (tarea.length === 0) {
       return res.status(404).json({ error: 'Tarea no encontrada' });
@@ -132,7 +131,7 @@ router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(403).json({ error: 'No tienes permiso para eliminar esta tarea' });
     }
 
-    await db.query('DELETE FROM tareas_seguimiento WHERE id = ?', [id]);
+    await req.db.query('DELETE FROM tareas_seguimiento WHERE id = ?', [id]);
     res.json({ message: 'Tarea eliminada' });
   } catch (error) {
     console.error('Error eliminando tarea:', error);

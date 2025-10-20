@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
+const { authMiddleware } = require('../middleware/auth');
 
 // Obtener notas de un lead
-router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.get('/lead/:leadId', authMiddleware, async (req, res) => {
   try {
     const { leadId } = req.params;
-    const [notas] = await db.query(
+    const [notas] = await req.db.query(
       `SELECT ni.*, u.name as usuario 
        FROM notas_internas ni
        JOIN users u ON ni.user_id = u.id
@@ -23,7 +22,7 @@ router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIAD
 });
 
 // Crear nota interna
-router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const { lead_id, texto } = req.body;
     
@@ -31,12 +30,12 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(400).json({ error: 'lead_id y texto son requeridos' });
     }
 
-    const [result] = await db.query(
+    const [result] = await req.db.query(
       'INSERT INTO notas_internas (lead_id, user_id, texto) VALUES (?, ?, ?)',
       [lead_id, req.user.id, texto]
     );
 
-    const [nota] = await db.query(
+    const [nota] = await req.db.query(
       `SELECT ni.*, u.name as usuario 
        FROM notas_internas ni
        JOIN users u ON ni.user_id = u.id
@@ -52,12 +51,12 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Eliminar nota
-router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     
     // Verificar que la nota pertenece al usuario o que el usuario es manager
-    const [nota] = await db.query('SELECT * FROM notas_internas WHERE id = ?', [id]);
+    const [nota] = await req.db.query('SELECT * FROM notas_internas WHERE id = ?', [id]);
     
     if (nota.length === 0) {
       return res.status(404).json({ error: 'Nota no encontrada' });
@@ -70,7 +69,7 @@ router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(403).json({ error: 'No tienes permiso para eliminar esta nota' });
     }
 
-    await db.query('DELETE FROM notas_internas WHERE id = ?', [id]);
+    await req.db.query('DELETE FROM notas_internas WHERE id = ?', [id]);
     res.json({ message: 'Nota eliminada' });
   } catch (error) {
     console.error('Error eliminando nota:', error);

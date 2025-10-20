@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-const { authMiddleware } = require('../middleware/auth'); // ✅ CAMBIADO
+const { authMiddleware } = require('../middleware/auth');
 
 // Obtener recordatorios de un lead
-router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.get('/lead/:leadId', authMiddleware, async (req, res) => {
   try {
     const { leadId } = req.params;
-    const [recordatorios] = await db.query(
+    const [recordatorios] = await req.db.query(
       'SELECT * FROM recordatorios WHERE lead_id = ? ORDER BY fecha DESC, hora DESC',
       [leadId]
     );
@@ -19,7 +18,7 @@ router.get('/lead/:leadId', authMiddleware, async (req, res) => { // ✅ CAMBIAD
 });
 
 // Crear recordatorio
-router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const { lead_id, fecha, hora, descripcion } = req.body;
     
@@ -27,12 +26,12 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
       return res.status(400).json({ error: 'Todos los campos son requeridos' });
     }
 
-    const [result] = await db.query(
+    const [result] = await req.db.query(
       'INSERT INTO recordatorios (lead_id, fecha, hora, descripcion) VALUES (?, ?, ?, ?)',
       [lead_id, fecha, hora, descripcion]
     );
 
-    const [recordatorio] = await db.query(
+    const [recordatorio] = await req.db.query(
       'SELECT * FROM recordatorios WHERE id = ?',
       [result.insertId]
     );
@@ -45,17 +44,17 @@ router.post('/', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Actualizar recordatorio (marcar como completado)
-router.patch('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.patch('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { completado } = req.body;
 
-    await db.query(
+    await req.db.query(
       'UPDATE recordatorios SET completado = ? WHERE id = ?',
       [completado, id]
     );
 
-    const [recordatorio] = await db.query(
+    const [recordatorio] = await req.db.query(
       'SELECT * FROM recordatorios WHERE id = ?',
       [id]
     );
@@ -68,10 +67,10 @@ router.patch('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Eliminar recordatorio
-router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    await db.query('DELETE FROM recordatorios WHERE id = ?', [id]);
+    await req.db.query('DELETE FROM recordatorios WHERE id = ?', [id]);
     res.json({ message: 'Recordatorio eliminado' });
   } catch (error) {
     console.error('Error eliminando recordatorio:', error);
@@ -80,9 +79,9 @@ router.delete('/:id', authMiddleware, async (req, res) => { // ✅ CAMBIADO
 });
 
 // Obtener recordatorios pendientes del usuario actual
-router.get('/pendientes', authMiddleware, async (req, res) => { // ✅ CAMBIADO
+router.get('/pendientes', authMiddleware, async (req, res) => {
   try {
-    const [recordatorios] = await db.query(
+    const [recordatorios] = await req.db.query(
       `SELECT r.*, l.nombre, l.telefono, l.modelo 
        FROM recordatorios r
        JOIN leads l ON r.lead_id = l.id
