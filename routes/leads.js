@@ -88,7 +88,6 @@ router.get('/', async (req, res) => {
     
     console.log(`📋 Listado de ${leads.length} leads`);
     
-    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'leads'
     res.json({ 
       leads: leadsWithParsedHistorial,
       total: leadsWithParsedHistorial.length 
@@ -122,7 +121,6 @@ router.get('/:id', async (req, res) => {
     
     lead.entrega = Boolean(lead.entrega);
 
-    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
     res.json({ lead });
   } catch (error) {
     console.error('Error al obtener lead:', error);
@@ -220,7 +218,6 @@ router.post('/', async (req, res) => {
 
     console.log(`✅ Lead creado: ${nombre} - Vendedor: ${nombreVendedor} (${fuente})`);
     
-    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
     res.status(201).json({ 
       lead,
       message: 'Lead creado exitosamente' 
@@ -231,7 +228,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Actualizar lead - ✅ CORREGIDO
+// Actualizar lead - ✅ CORREGIDO CON FECHA
 router.put('/:id', async (req, res) => {
   try {
     const leadId = req.params.id;
@@ -283,6 +280,7 @@ router.put('/:id', async (req, res) => {
     const fields = [];
     const values = [];
 
+    // ✅ AGREGADO 'fecha' al fieldsMap
     const fieldsMap = {
       nombre: 'nombre',
       telefono: 'telefono',
@@ -334,7 +332,6 @@ router.put('/:id', async (req, res) => {
 
     console.log(`✅ Lead actualizado: ID ${leadId}`);
     
-    // ✅ CORRECCIÓN: Enviar como objeto con propiedad 'lead'
     res.json({ 
       lead,
       message: 'Lead actualizado exitosamente' 

@@ -65,6 +65,18 @@ try {
   metasRouter = null;
 }
 
+// ✅ AGREGAR: Cargar bot de WhatsApp
+let botFiat = null;
+try {
+  const { startBot } = require('./whatsapp-bot/bot');
+  botFiat = startBot;
+  console.log('✅ Bot de WhatsApp cargado correctamente');
+} catch (err) {
+  console.warn('⚠️ Bot de WhatsApp no disponible:', err.message);
+  console.error('   Detalle del error:', err);
+  botFiat = null;
+}
+
 const app = express();
 
 // Proxy (necesario para cookie Secure detrás de Railway)
@@ -166,6 +178,7 @@ app.get('/api/health', (_req, res) => {
       tareas: !!tareasRouter,
       push: !!pushRouter,
       metas: !!metasRouter,
+      whatsappBot: !!botFiat, // ✅ AGREGADO
     }
   });
 });
@@ -230,7 +243,22 @@ app.listen(PORT, () => {
   console.log(`   ${tareasRouter ? '✅' : '⚠️'} Tareas`);
   console.log(`   ${pushRouter ? '✅' : '⚠️'} Push Notifications`);
   console.log(`   ${metasRouter ? '✅' : '⚠️'} Metas`);
+  console.log(`   ${botFiat ? '✅' : '⚠️'} WhatsApp Bot`);
   console.log('╚═══════════════════════════════════════╝');
+  
+  // ✅ INICIAR BOT DE WHATSAPP
+  if (botFiat && process.env.ENABLE_WHATSAPP_BOT !== 'false') {
+    console.log('\n🤖 Iniciando Bot de WhatsApp FIAT...');
+    setTimeout(() => {
+      botFiat().catch(err => {
+        console.error('❌ Error iniciando bot de WhatsApp:', err);
+      });
+    }, 3000); // Esperar 3 segundos para que el servidor esté listo
+  } else if (!botFiat) {
+    console.log('\n⚠️  Bot de WhatsApp no disponible');
+  } else {
+    console.log('\n⏸️  Bot de WhatsApp deshabilitado (ENABLE_WHATSAPP_BOT=false)');
+  }
 });
 
 // Graceful shutdown

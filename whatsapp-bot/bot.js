@@ -1,7 +1,6 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
-const { createLead } = require('../services/leads');
-const db = require('../db');
+const db = require('../db'); // ✅ Solo necesitamos db
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
@@ -120,17 +119,14 @@ async function testConexion() {
   try {
     log('INFO', '🔍 Iniciando test de conexión a BD...');
     
-    const result = await db.query('SELECT DATABASE() as db_name');
-    const dbData = Array.isArray(result[0]) ? result[0][0] : result[0];
-    log('INFO', `📊 Base de datos: ${dbData.db_name}`);
+    const [result] = await db.query('SELECT DATABASE() as db_name');
+    log('INFO', `📊 Base de datos: ${result[0].db_name}`);
     
-    const totalResult = await db.query('SELECT COUNT(*) as total FROM users');
-    const totalData = Array.isArray(totalResult[0]) ? totalResult[0][0] : totalResult[0];
-    log('INFO', `👥 Total usuarios: ${totalData.total}`);
+    const [totalResult] = await db.query('SELECT COUNT(*) as total FROM users');
+    log('INFO', `👥 Total usuarios: ${totalResult[0].total}`);
     
-    const vendedoresResult = await db.query(`SELECT COUNT(*) as total FROM users WHERE role = 'vendedor' AND active = 1`);
-    const vendedoresData = Array.isArray(vendedoresResult[0]) ? vendedoresResult[0][0] : vendedoresResult[0];
-    log('INFO', `✅ Vendedores activos: ${vendedoresData.total}`);
+    const [vendedoresResult] = await db.query(`SELECT COUNT(*) as total FROM users WHERE role = 'vendedor' AND active = 1`);
+    log('INFO', `✅ Vendedores activos: ${vendedoresResult[0].total}`);
     
   } catch (error) {
     log('ERROR', '❌ Error en test de conexión:', error.message);
@@ -248,23 +244,20 @@ function limpiarTelefonoWhatsApp(telefono, numeroReal = null) {
   }
 }
 
-// Obtener vendedor
+// ✅ NUEVA FUNCIÓN: Obtener vendedor disponible usando db.query directamente
 async function obtenerVendedorDisponible() {
   try {
     log('INFO', '🔍 Buscando vendedor...');
     
-    const result = await db.query(
+    const [vendedores] = await db.query(
       `SELECT id, name FROM users 
        WHERE role = 'vendedor' AND active = 1 
        ORDER BY RAND() LIMIT 1`
     );
     
-    const vendedores = Array.isArray(result[0]) ? result[0] : result;
-    
     if (vendedores.length > 0) {
-      const vendedor = Array.isArray(vendedores) ? vendedores[0] : vendedores;
-      log('INFO', `✅ Vendedor: ${vendedor.name} (ID: ${vendedor.id})`);
-      return vendedor.id;
+      log('INFO', `✅ Vendedor: ${vendedores[0].name} (ID: ${vendedores[0].id})`);
+      return vendedores[0].id;
     }
     
     log('WARN', '⚠️ No hay vendedores activos');
@@ -328,7 +321,7 @@ async function enviarMensajeSeguro(sock, destinatario, contenido, reintentos = 3
   return false;
 }
 
-// Crear lead
+// ✅ NUEVA FUNCIÓN: Crear lead directamente con db.query
 async function crearLeadEnCRM(leadData) {
   try {
     log('INFO', `Creando lead: ${leadData.nombre}`);
@@ -342,31 +335,60 @@ async function crearLeadEnCRM(leadData) {
 
     const vendedorId = await obtenerVendedorDisponible();
     
-    const lead = await createLead({
-      nombre: leadData.nombre,
-      telefono: telefonoLimpio,
-      modelo: leadData.modelo || 'Consultar',
-      formaPago: 'A definir',
-      infoUsado: '',
-      entrega: 0,
-      fecha: new Date().toISOString().split('T')[0],
-      estado: 'nuevo',
-      fuente: BOT_CONFIG.CRM_SOURCE,
-      assigned_to: vendedorId,
-      notas: `[${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.MARCA}]
+    // Obtener el nombre del vendedor
+    let nombreVendedor = 'Sin asignar';
+    if (vendedorId) {
+      const [vendedorData] = await db.query('SELECT name FROM users WHERE id = ?', [vendedorId]);
+      nombreVendedor = vendedorData[0]?.name || 'Sin asignar';
+    }
+
+    // Historial inicial
+    const historialInicial = JSON.stringify([
+      {
+        estado: 'nuevo',
+        timestamp: new Date().toISOString(),
+        usuario: BOT_CONFIG.BOT_NAME
+      },
+      ...(vendedorId ? [{
+        estado: `Asignado automáticamente a ${nombreVendedor} (Bot WhatsApp)`,
+        timestamp: new Date().toISOString(),
+        usuario: 'Sistema'
+      }] : [])
+    ]);
+
+    // Insertar lead en la base de datos
+    const [result] = await db.query(
+      `INSERT INTO leads 
+      (nombre, telefono, modelo, formaPago, infoUsado, entrega, notas, estado, fuente, fecha, assigned_to, equipo, historial, created_by) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        leadData.nombre,
+        telefonoLimpio,
+        leadData.modelo || 'Consultar',
+        'A definir',
+        '',
+        0,
+        `[${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.MARCA}]
 🤖 ${BOT_CONFIG.BOT_ID}
 📞 ${telefonoLimpio}
 🎯 WhatsApp Bot
-${vendedorId ? `👤 Vendedor: ${vendedorId}` : '⚠️ Sin vendedor'}
+${vendedorId ? `👤 Vendedor: ${nombreVendedor}` : '⚠️ Sin vendedor'}
 
 📋 DATOS:
 - ${leadData.nombre}
 - ${leadData.modelo || 'A consultar'}`,
-      equipo: 'roberto'
-    });
+        'nuevo',
+        BOT_CONFIG.CRM_SOURCE,
+        new Date().toISOString().split('T')[0],
+        vendedorId || null,
+        'roberto',
+        historialInicial,
+        vendedorId || null
+      ]
+    );
 
-    log('INFO', `✅ Lead creado: ID ${lead.id}`);
-    return { success: true, data: lead };
+    log('INFO', `✅ Lead creado: ID ${result.insertId}`);
+    return { success: true, data: { id: result.insertId } };
 
   } catch (error) {
     log('ERROR', `❌ Error creando lead: ${error.message}`);
@@ -384,7 +406,7 @@ ${vendedorId ? `👤 Vendedor: ${vendedorId}` : '⚠️ Sin vendedor'}
         timestamp: new Date().toISOString()
       }, null, 2));
       
-      log('INFO', `📝 Guardado en fallback`);
+      log('INFO', `💾 Guardado en fallback`);
     } catch (e) {
       log('ERROR', 'Error en fallback', e.message);
     }
