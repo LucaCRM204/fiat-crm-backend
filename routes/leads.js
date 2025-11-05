@@ -55,10 +55,10 @@ async function getNextVendedor(db, equipo = 'principal') {
   }
 }
 
-// Listar leads - ✅ CORREGIDO
+// Listar leads - ✅ CORREGIDO CON FILTROS DE PERMISOS
 router.get('/', async (req, res) => {
   try {
-    const [leads] = await req.db.query(`
+    let query = `
       SELECT 
         l.*,
         u.name as vendedor_nombre,
@@ -66,8 +66,29 @@ router.get('/', async (req, res) => {
       FROM leads l
       LEFT JOIN users u ON l.assigned_to = u.id
       LEFT JOIN users c ON l.created_by = c.id
-      ORDER BY l.created_at DESC
-    `);
+    `;
+    
+    const params = [];
+    
+    // 🔐 FILTROS SEGÚN ROL DEL USUARIO
+    if (req.user.role === 'vendedor') {
+      // Los vendedores solo ven SUS leads asignados
+      query += ' WHERE l.assigned_to = ?';
+      params.push(req.user.id);
+      console.log(`🔒 Vendedor ${req.user.name} - Filtrando solo sus leads`);
+    } else if (req.user.role === 'gerente') {
+      // Los gerentes ven los leads de su equipo
+      if (req.user.equipo) {
+        query += ' WHERE l.equipo = ?';
+        params.push(req.user.equipo);
+        console.log(`🔒 Gerente ${req.user.name} - Filtrando equipo ${req.user.equipo}`);
+      }
+    }
+    // Los owners ven TODOS los leads (sin filtro)
+    
+    query += ' ORDER BY l.created_at DESC';
+    
+    const [leads] = await req.db.query(query, params);
     
     // Parse historial JSON con manejo de errores
     const leadsWithParsedHistorial = leads.map(lead => {
@@ -86,7 +107,7 @@ router.get('/', async (req, res) => {
       };
     });
     
-    console.log(`📋 Listado de ${leads.length} leads`);
+    console.log(`📋 Usuario ${req.user.name} (${req.user.role}) - ${leads.length} leads`);
     
     res.json({ 
       leads: leadsWithParsedHistorial,
@@ -98,16 +119,29 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Obtener un lead específico - ✅ CORREGIDO
+// Obtener un lead específico - ✅ CORREGIDO CON PERMISOS
 router.get('/:id', async (req, res) => {
   try {
-    const [leads] = await req.db.query(
-      'SELECT * FROM leads WHERE id = ?',
-      [req.params.id]
-    );
+    let query = 'SELECT * FROM leads WHERE id = ?';
+    const params = [req.params.id];
+    
+    // 🔐 VERIFICAR PERMISOS
+    if (req.user.role === 'vendedor') {
+      // Los vendedores solo ven sus propios leads
+      query += ' AND assigned_to = ?';
+      params.push(req.user.id);
+    } else if (req.user.role === 'gerente') {
+      // Los gerentes solo ven leads de su equipo
+      if (req.user.equipo) {
+        query += ' AND equipo = ?';
+        params.push(req.user.equipo);
+      }
+    }
+    
+    const [leads] = await req.db.query(query, params);
 
     if (leads.length === 0) {
-      return res.status(404).json({ error: 'Lead no encontrado' });
+      return res.status(404).json({ error: 'Lead no encontrado o sin permisos' });
     }
 
     const lead = leads[0];
@@ -228,17 +262,31 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Actualizar lead - ✅ CORREGIDO CON FECHA
+// Actualizar lead - ✅ CORREGIDO CON PERMISOS
 router.put('/:id', async (req, res) => {
   try {
     const leadId = req.params.id;
     const updates = req.body;
 
-    // Obtener el lead actual
-    const [currentLead] = await req.db.query('SELECT * FROM leads WHERE id = ?', [leadId]);
+    // Obtener el lead actual CON VERIFICACIÓN DE PERMISOS
+    let query = 'SELECT * FROM leads WHERE id = ?';
+    const params = [leadId];
+    
+    // 🔐 VERIFICAR PERMISOS
+    if (req.user.role === 'vendedor') {
+      query += ' AND assigned_to = ?';
+      params.push(req.user.id);
+    } else if (req.user.role === 'gerente') {
+      if (req.user.equipo) {
+        query += ' AND equipo = ?';
+        params.push(req.user.equipo);
+      }
+    }
+    
+    const [currentLead] = await req.db.query(query, params);
     
     if (currentLead.length === 0) {
-      return res.status(404).json({ error: 'Lead no encontrado' });
+      return res.status(404).json({ error: 'Lead no encontrado o sin permisos para modificar' });
     }
 
     let historial = [];
@@ -280,7 +328,6 @@ router.put('/:id', async (req, res) => {
     const fields = [];
     const values = [];
 
-    // ✅ AGREGADO 'fecha' al fieldsMap
     const fieldsMap = {
       nombre: 'nombre',
       telefono: 'telefono',
@@ -330,7 +377,7 @@ router.put('/:id', async (req, res) => {
     
     lead.entrega = Boolean(lead.entrega);
 
-    console.log(`✅ Lead actualizado: ID ${leadId}`);
+    console.log(`✅ Lead actualizado: ID ${leadId} por ${req.user.name}`);
     
     res.json({ 
       lead,
