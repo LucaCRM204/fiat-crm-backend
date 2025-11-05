@@ -90,7 +90,7 @@ router.get('/', async (req, res) => {
     
     const [leads] = await req.db.query(query, params);
     
-    // Parse historial JSON con manejo de errores
+    // Parse historial JSON con manejo de errores y mapear assigned_to → vendedor
     const leadsWithParsedHistorial = leads.map(lead => {
       let historial = [];
       try {
@@ -103,7 +103,8 @@ router.get('/', async (req, res) => {
       return {
         ...lead,
         historial,
-        entrega: Boolean(lead.entrega)
+        entrega: Boolean(lead.entrega),
+        vendedor: lead.assigned_to // ✅ Mapear assigned_to a vendedor para compatibilidad frontend
       };
     });
     
@@ -154,6 +155,7 @@ router.get('/:id', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
+    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
 
     res.json({ lead });
   } catch (error) {
@@ -249,6 +251,7 @@ router.post('/', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
+    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
 
     console.log(`✅ Lead creado: ${nombre} - Vendedor: ${nombreVendedor} (${fuente})`);
     
@@ -376,6 +379,7 @@ router.put('/:id', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
+    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
 
     console.log(`✅ Lead actualizado: ID ${leadId} por ${req.user.name}`);
     
