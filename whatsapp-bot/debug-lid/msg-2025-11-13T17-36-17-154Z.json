@@ -1,0 +1,71 @@
+{
+  "key": {
+    "remoteJid": "265433290653752@lid",
+    "fromMe": false,
+    "id": "AC68CA856078A769A7C96F625E68A54C"
+  },
+  "messageTimestamp": 1763055375,
+  "pushName": "L/⭕/®️/3️⃣",
+  "broadcast": false,
+  "message": {
+    "conversation": "1",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 87,
+        "1": 102,
+        "2": 244,
+        "3": 184,
+        "4": 164,
+        "5": 116,
+        "6": 0,
+        "7": 47,
+        "8": 24,
+        "9": 221,
+        "10": 241,
+        "11": 71,
+        "12": 125,
+        "13": 76,
+        "14": 101,
+        "15": 42,
+        "16": 203,
+        "17": 118,
+        "18": 23,
+        "19": 153,
+        "20": 164,
+        "21": 71,
+        "22": 248,
+        "23": 69,
+        "24": 45,
+        "25": 40,
+        "26": 36,
+        "27": 40,
+        "28": 244,
+        "29": 19,
+        "30": 251,
+        "31": 90
+      }
+    }
+  }
+}

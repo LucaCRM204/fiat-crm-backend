@@ -1,0 +1,71 @@
+{
+  "key": {
+    "remoteJid": "29472183025824@lid",
+    "fromMe": false,
+    "id": "AC3E8CF1099660186E4396B09DFB5506"
+  },
+  "messageTimestamp": 1763049194,
+  "pushName": "Andujar Cubilla",
+  "broadcast": false,
+  "message": {
+    "conversation": "1130215480",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 145,
+          "1": 171,
+          "2": 60,
+          "3": 230,
+          "4": 249,
+          "5": 208,
+          "6": 19,
+          "7": 41,
+          "8": 222,
+          "9": 30
+        },
+        "recipientTimestamp": {
+          "low": 1763048871,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 51,
+        "1": 84,
+        "2": 153,
+        "3": 146,
+        "4": 115,
+        "5": 180,
+        "6": 64,
+        "7": 195,
+        "8": 54,
+        "9": 18,
+        "10": 60,
+        "11": 176,
+        "12": 219,
+        "13": 131,
+        "14": 88,
+        "15": 185,
+        "16": 246,
+        "17": 164,
+        "18": 122,
+        "19": 2,
+        "20": 3,
+        "21": 114,
+        "22": 161,
+        "23": 142,
+        "24": 223,
+        "25": 240,
+        "26": 154,
+        "27": 4,
+        "28": 110,
+        "29": 133,
+        "30": 235,
+        "31": 103
+      }
+    }
+  }
+}

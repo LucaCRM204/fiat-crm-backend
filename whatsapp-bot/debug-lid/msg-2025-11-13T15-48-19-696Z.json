@@ -1,0 +1,88 @@
+{
+  "key": {
+    "remoteJid": "145908914229382@lid",
+    "fromMe": false,
+    "id": "3AD3A1C6C4E41D6F99BD"
+  },
+  "messageTimestamp": 1763048898,
+  "pushName": "Luca",
+  "broadcast": false,
+  "message": {
+    "conversation": "1160477412",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "senderKeyHash": {
+          "0": 181,
+          "1": 80,
+          "2": 152,
+          "3": 181,
+          "4": 80,
+          "5": 97,
+          "6": 14,
+          "7": 172,
+          "8": 128,
+          "9": 78
+        },
+        "senderTimestamp": {
+          "low": 1763045275,
+          "high": 0,
+          "unsigned": true
+        },
+        "recipientKeyHash": {
+          "0": 145,
+          "1": 171,
+          "2": 60,
+          "3": 230,
+          "4": 249,
+          "5": 208,
+          "6": 19,
+          "7": 41,
+          "8": 222,
+          "9": 30
+        },
+        "recipientTimestamp": {
+          "low": 1761758717,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 216,
+        "1": 23,
+        "2": 45,
+        "3": 254,
+        "4": 37,
+        "5": 41,
+        "6": 45,
+        "7": 255,
+        "8": 125,
+        "9": 211,
+        "10": 31,
+        "11": 225,
+        "12": 183,
+        "13": 135,
+        "14": 17,
+        "15": 168,
+        "16": 133,
+        "17": 200,
+        "18": 3,
+        "19": 33,
+        "20": 250,
+        "21": 240,
+        "22": 144,
+        "23": 121,
+        "24": 127,
+        "25": 68,
+        "26": 84,
+        "27": 107,
+        "28": 50,
+        "29": 10,
+        "30": 193,
+        "31": 44
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "key": {
+    "remoteJid": "35871717851289@lid",
+    "fromMe": false,
+    "id": "ACDFE7DFC99328C5003ACB827AFBBCDA"
+  },
+  "messageTimestamp": 1763059650,
+  "pushName": "Tito",
+  "broadcast": false,
+  "message": {
+    "protocolMessage": {
+      "key": {
+        "remoteJid": "43968318435501@lid",
+        "fromMe": true
+      },
+      "type": 4,
+      "ephemeralExpiration": 7776000,
+      "ephemeralSettingTimestamp": {
+        "low": 1757968130,
+        "high": 0,
+        "unsigned": false
+      },
+      "disappearingMode": {
+        "initiator": 1,
+        "trigger": 2,
+        "initiatedByMe": true
+      }
+    },
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2
+    }
+  }
+}

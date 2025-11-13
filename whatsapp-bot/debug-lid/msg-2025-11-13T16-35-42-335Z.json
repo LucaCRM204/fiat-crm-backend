@@ -1,0 +1,71 @@
+{
+  "key": {
+    "remoteJid": "175454296260709@lid",
+    "fromMe": false,
+    "id": "ACC2F793CEC7CA144FEA107F000D821F"
+  },
+  "messageTimestamp": 1763051741,
+  "pushName": "Esteban",
+  "broadcast": false,
+  "message": {
+    "conversation": "Hola",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 249,
+        "1": 80,
+        "2": 129,
+        "3": 181,
+        "4": 92,
+        "5": 8,
+        "6": 218,
+        "7": 246,
+        "8": 124,
+        "9": 165,
+        "10": 171,
+        "11": 99,
+        "12": 227,
+        "13": 82,
+        "14": 64,
+        "15": 198,
+        "16": 87,
+        "17": 103,
+        "18": 17,
+        "19": 53,
+        "20": 67,
+        "21": 60,
+        "22": 201,
+        "23": 164,
+        "24": 176,
+        "25": 170,
+        "26": 253,
+        "27": 22,
+        "28": 22,
+        "29": 132,
+        "30": 36,
+        "31": 65
+      }
+    }
+  }
+}

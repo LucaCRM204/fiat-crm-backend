@@ -1,0 +1,54 @@
+{
+  "key": {
+    "remoteJid": "160997067256059@lid",
+    "fromMe": false,
+    "id": "AC3051DC490834D01EFE055A14F0706F"
+  },
+  "messageTimestamp": 1763061428,
+  "pushName": "Nica Amaya",
+  "broadcast": false,
+  "message": {
+    "protocolMessage": {
+      "key": {
+        "remoteJid": "43968318435501@lid",
+        "fromMe": true
+      },
+      "type": 4,
+      "ephemeralExpiration": 7776000,
+      "ephemeralSettingTimestamp": {
+        "low": 1752427579,
+        "high": 0,
+        "unsigned": false
+      },
+      "disappearingMode": {
+        "initiator": 1,
+        "trigger": 2,
+        "initiatedByMe": true
+      }
+    },
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2
+    }
+  }
+}

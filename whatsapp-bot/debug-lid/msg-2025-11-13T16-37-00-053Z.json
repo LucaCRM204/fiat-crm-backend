@@ -1,0 +1,15 @@
+{
+  "key": {
+    "remoteJid": "175454296260709@lid",
+    "fromMe": false,
+    "id": "AC86127457072AAF68602D2B234223DA",
+    "isViewOnce": true
+  },
+  "messageTimestamp": 1763051813,
+  "pushName": "Esteban",
+  "broadcast": false,
+  "messageStubType": 2,
+  "messageStubParameters": [
+    "Message absent from node"
+  ]
+}

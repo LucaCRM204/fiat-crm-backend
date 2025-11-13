@@ -1,0 +1,71 @@
+{
+  "key": {
+    "remoteJid": "14834900943054@lid",
+    "fromMe": false,
+    "id": "AC638E2F45673AB1336CCFDCF51ADB2F"
+  },
+  "messageTimestamp": 1763054186,
+  "pushName": "German",
+  "broadcast": false,
+  "message": {
+    "conversation": "4",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 246,
+        "1": 81,
+        "2": 198,
+        "3": 86,
+        "4": 228,
+        "5": 70,
+        "6": 218,
+        "7": 102,
+        "8": 120,
+        "9": 126,
+        "10": 250,
+        "11": 118,
+        "12": 111,
+        "13": 15,
+        "14": 169,
+        "15": 236,
+        "16": 51,
+        "17": 208,
+        "18": 124,
+        "19": 57,
+        "20": 174,
+        "21": 153,
+        "22": 169,
+        "23": 214,
+        "24": 54,
+        "25": 205,
+        "26": 248,
+        "27": 115,
+        "28": 188,
+        "29": 58,
+        "30": 12,
+        "31": 168
+      }
+    }
+  }
+}

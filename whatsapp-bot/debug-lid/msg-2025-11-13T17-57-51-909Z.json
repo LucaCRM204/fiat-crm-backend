@@ -1,0 +1,71 @@
+{
+  "key": {
+    "remoteJid": "45363931136116@lid",
+    "fromMe": false,
+    "id": "ACF70FD1F12E420B4EC0C0C7BEC963B0"
+  },
+  "messageTimestamp": 1763056670,
+  "pushName": "Óscar",
+  "broadcast": false,
+  "message": {
+    "conversation": "Este es mí WhatsApp",
+    "messageContextInfo": {
+      "deviceListMetadata": {
+        "senderKeyIndexes": [],
+        "recipientKeyIndexes": [],
+        "recipientKeyHash": {
+          "0": 48,
+          "1": 184,
+          "2": 183,
+          "3": 128,
+          "4": 174,
+          "5": 148,
+          "6": 53,
+          "7": 27,
+          "8": 46,
+          "9": 91
+        },
+        "recipientTimestamp": {
+          "low": 1763049695,
+          "high": 0,
+          "unsigned": true
+        }
+      },
+      "deviceListMetadataVersion": 2,
+      "messageSecret": {
+        "0": 165,
+        "1": 39,
+        "2": 231,
+        "3": 156,
+        "4": 148,
+        "5": 220,
+        "6": 227,
+        "7": 142,
+        "8": 1,
+        "9": 195,
+        "10": 206,
+        "11": 115,
+        "12": 187,
+        "13": 248,
+        "14": 184,
+        "15": 49,
+        "16": 150,
+        "17": 108,
+        "18": 159,
+        "19": 199,
+        "20": 105,
+        "21": 171,
+        "22": 185,
+        "23": 132,
+        "24": 92,
+        "25": 184,
+        "26": 177,
+        "27": 155,
+        "28": 141,
+        "29": 15,
+        "30": 21,
+        "31": 207
+      }
+    }
+  }
+}
