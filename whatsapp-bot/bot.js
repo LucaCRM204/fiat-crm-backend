@@ -267,7 +267,7 @@ async function enviarACRM(leadData) {
     log('INFO', '📦 Payload para CRM:', payload);
     
     const response = await axios.post(
-      `${CRM_CONFIG.baseUrl}/webhooks/whatsapp-lead`,
+      `${CRM_CONFIG.baseUrl}/leads/bot-webhook`,
       payload,
       {
         timeout: CRM_CONFIG.timeout,

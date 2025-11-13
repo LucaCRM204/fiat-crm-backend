@@ -3,13 +3,9 @@ const router = express.Router();
 const { pool } = require('../db');
 const { authMiddleware, checkRole } = require('../middleware/auth');
 
-// Todas las rutas requieren autenticación
-router.use(authMiddleware);
-
 // Función para obtener el siguiente vendedor (Round Robin)
 async function getNextVendedor(db, equipo = 'principal') {
   try {
-    // Obtener todos los vendedores activos del equipo
     const [vendedores] = await db.query(`
       SELECT id, name 
       FROM users 
@@ -19,10 +15,9 @@ async function getNextVendedor(db, equipo = 'principal') {
     `);
 
     if (vendedores.length === 0) {
-      return null; // No hay vendedores disponibles
+      return null;
     }
 
-    // Obtener el último vendedor asignado
     const [ultimoLead] = await db.query(`
       SELECT assigned_to 
       FROM leads 
@@ -35,14 +30,10 @@ async function getNextVendedor(db, equipo = 'principal') {
     let siguienteVendedor;
 
     if (ultimoLead.length === 0 || !ultimoLead[0].assigned_to) {
-      // Si no hay leads previos, asignar al primer vendedor
       siguienteVendedor = vendedores[0];
     } else {
-      // Encontrar el índice del último vendedor
       const ultimoVendedorId = ultimoLead[0].assigned_to;
       const indiceActual = vendedores.findIndex(v => v.id === ultimoVendedorId);
-      
-      // Obtener el siguiente vendedor (circular)
       const siguienteIndice = (indiceActual + 1) % vendedores.length;
       siguienteVendedor = vendedores[siguienteIndice];
     }
@@ -55,7 +46,132 @@ async function getNextVendedor(db, equipo = 'principal') {
   }
 }
 
-// Listar leads - ✅ CORREGIDO CON FILTROS DE PERMISOS
+// ============================================
+// WEBHOOK PARA BOT DE WHATSAPP (SIN AUTENTICACIÓN)
+// ============================================
+router.post('/bot-webhook', async (req, res) => {
+  try {
+    console.log('🤖 [BOT WEBHOOK] Solicitud recibida');
+    
+    const webhookKey = req.headers['x-webhook-key'] || req.body.webhookKey;
+    const expectedKey = process.env.WEBHOOK_SECRET || 'auto-del-sol-fiat-2024';
+    
+    if (!webhookKey || webhookKey !== expectedKey) {
+      console.log('❌ [BOT WEBHOOK] Clave incorrecta');
+      return res.status(401).json({ error: 'No autorizado' });
+    }
+
+    console.log('✅ [BOT WEBHOOK] Clave validada correctamente');
+
+    const { nombre, telefono, modelo, formaPago, fuente, estado, equipo, notas } = req.body;
+
+    if (!nombre || !telefono || !modelo) {
+      console.log('❌ [BOT WEBHOOK] Faltan campos requeridos');
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    console.log('📋 [BOT WEBHOOK] Datos:', { nombre, telefono, modelo, equipo: equipo || 'principal' });
+
+    let vendedorAsignado = null;
+    let nombreVendedor = 'Sin asignar';
+
+    try {
+      const siguienteVendedor = await getNextVendedor(req.db, equipo || 'principal');
+      if (siguienteVendedor) {
+        vendedorAsignado = siguienteVendedor.id;
+        nombreVendedor = siguienteVendedor.name;
+        console.log(`🎯 [BOT WEBHOOK] Asignado a: ${nombreVendedor} (ID: ${vendedorAsignado})`);
+      }
+    } catch (rrError) {
+      console.error('⚠️ [BOT WEBHOOK] Error en Round Robin:', rrError.message);
+    }
+
+    const historialInicial = JSON.stringify([
+      {
+        estado: estado || 'nuevo',
+        timestamp: new Date().toISOString(),
+        usuario: 'Bot WhatsApp FIAT'
+      },
+      ...(vendedorAsignado ? [{
+        estado: `Asignado automáticamente a ${nombreVendedor} (Round Robin)`,
+        timestamp: new Date().toISOString(),
+        usuario: 'Sistema'
+      }] : [])
+    ]);
+
+    console.log('💾 [BOT WEBHOOK] Insertando en BD...');
+    
+    const [result] = await req.db.query(
+      `INSERT INTO leads 
+      (nombre, telefono, modelo, formaPago, infoUsado, entrega, notas, estado, fuente, fecha, assigned_to, equipo, historial, created_by) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nombre,
+        telefono,
+        modelo,
+        formaPago || 'Plan de ahorro',
+        null,
+        0,
+        notas || '',
+        estado || 'nuevo',
+        fuente || 'whatsapp',
+        new Date().toISOString().split('T')[0],
+        vendedorAsignado || null,
+        equipo || 'principal',
+        historialInicial,
+        vendedorAsignado || null
+      ]
+    );
+
+    const leadId = result.insertId;
+    console.log(`✅ [BOT WEBHOOK] Lead creado con ID: ${leadId}`);
+
+    const [newLead] = await req.db.query('SELECT * FROM leads WHERE id = ?', [leadId]);
+    const lead = newLead[0];
+    
+    try {
+      lead.historial = JSON.parse(lead.historial);
+    } catch (e) {
+      lead.historial = [];
+    }
+    
+    lead.entrega = Boolean(lead.entrega);
+    lead.vendedor = lead.assigned_to;
+
+    console.log(`✅ [BOT WEBHOOK] Completado - ${nombre} | ${modelo} | ${nombreVendedor}`);
+    
+    res.status(201).json({ 
+      success: true,
+      lead: {
+        id: lead.id,
+        nombre: lead.nombre,
+        telefono: lead.telefono,
+        modelo: lead.modelo,
+        vendedor: nombreVendedor,
+        vendedorId: vendedorAsignado,
+        estado: lead.estado,
+        fuente: lead.fuente,
+        equipo: lead.equipo
+      },
+      message: 'Lead creado exitosamente desde bot de WhatsApp',
+      vendedor: nombreVendedor
+    });
+
+  } catch (error) {
+    console.error('❌ [BOT WEBHOOK] Error:', error);
+    res.status(500).json({ 
+      error: 'Error al crear lead desde bot',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
+// RESTO DE RUTAS (REQUIEREN AUTENTICACIÓN)
+// ============================================
+router.use(authMiddleware);
+
+// Listar leads
 router.get('/', async (req, res) => {
   try {
     let query = `
@@ -70,27 +186,22 @@ router.get('/', async (req, res) => {
     
     const params = [];
     
-    // 🔐 FILTROS SEGÚN ROL DEL USUARIO
     if (req.user.role === 'vendedor') {
-      // Los vendedores solo ven SUS leads asignados
       query += ' WHERE l.assigned_to = ?';
       params.push(req.user.id);
       console.log(`🔒 Vendedor ${req.user.name} - Filtrando solo sus leads`);
     } else if (req.user.role === 'gerente') {
-      // Los gerentes ven los leads de su equipo
       if (req.user.equipo) {
         query += ' WHERE l.equipo = ?';
         params.push(req.user.equipo);
         console.log(`🔒 Gerente ${req.user.name} - Filtrando equipo ${req.user.equipo}`);
       }
     }
-    // Los owners ven TODOS los leads (sin filtro)
     
     query += ' ORDER BY l.created_at DESC';
     
     const [leads] = await req.db.query(query, params);
     
-    // Parse historial JSON con manejo de errores y mapear assigned_to → vendedor
     const leadsWithParsedHistorial = leads.map(lead => {
       let historial = [];
       try {
@@ -104,7 +215,7 @@ router.get('/', async (req, res) => {
         ...lead,
         historial,
         entrega: Boolean(lead.entrega),
-        vendedor: lead.assigned_to // ✅ Mapear assigned_to a vendedor para compatibilidad frontend
+        vendedor: lead.assigned_to
       };
     });
     
@@ -120,19 +231,16 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Obtener un lead específico - ✅ CORREGIDO CON PERMISOS
+// Obtener un lead específico
 router.get('/:id', async (req, res) => {
   try {
     let query = 'SELECT * FROM leads WHERE id = ?';
     const params = [req.params.id];
     
-    // 🔐 VERIFICAR PERMISOS
     if (req.user.role === 'vendedor') {
-      // Los vendedores solo ven sus propios leads
       query += ' AND assigned_to = ?';
       params.push(req.user.id);
     } else if (req.user.role === 'gerente') {
-      // Los gerentes solo ven leads de su equipo
       if (req.user.equipo) {
         query += ' AND equipo = ?';
         params.push(req.user.equipo);
@@ -155,7 +263,7 @@ router.get('/:id', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
-    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
+    lead.vendedor = lead.assigned_to;
 
     res.json({ lead });
   } catch (error) {
@@ -164,7 +272,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Crear lead - ✅ CORREGIDO
+// Crear lead
 router.post('/', async (req, res) => {
   try {
     const {
@@ -188,7 +296,6 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // ROUND ROBIN: Si no viene vendedor asignado, asignar automáticamente
     let vendedorAsignado = vendedor;
     let nombreVendedor = 'Sin asignar';
 
@@ -200,12 +307,10 @@ router.post('/', async (req, res) => {
         console.log(`🔄 Round Robin activado: Lead asignado a ${nombreVendedor}`);
       }
     } else {
-      // Si viene vendedor, obtener su nombre
       const [vendedorData] = await req.db.query('SELECT name FROM users WHERE id = ?', [vendedorAsignado]);
       nombreVendedor = vendedorData[0]?.name || 'Sin asignar';
     }
 
-    // Historial inicial
     const historialInicial = JSON.stringify([
       {
         estado: estado || 'nuevo',
@@ -251,7 +356,7 @@ router.post('/', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
-    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
+    lead.vendedor = lead.assigned_to;
 
     console.log(`✅ Lead creado: ${nombre} - Vendedor: ${nombreVendedor} (${fuente})`);
     
@@ -265,17 +370,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Actualizar lead - ✅ CORREGIDO CON PERMISOS
+// Actualizar lead
 router.put('/:id', async (req, res) => {
   try {
     const leadId = req.params.id;
     const updates = req.body;
 
-    // Obtener el lead actual CON VERIFICACIÓN DE PERMISOS
     let query = 'SELECT * FROM leads WHERE id = ?';
     const params = [leadId];
     
-    // 🔐 VERIFICAR PERMISOS
     if (req.user.role === 'vendedor') {
       query += ' AND assigned_to = ?';
       params.push(req.user.id);
@@ -300,19 +403,15 @@ router.put('/:id', async (req, res) => {
       historial = [];
     }
 
-    // Si cambió el estado, agregar al historial y actualizar last_status_change
     if (updates.estado && updates.estado !== currentLead[0].estado) {
       historial.push({
         estado: updates.estado,
         timestamp: new Date().toISOString(),
         usuario: req.user.name
       });
-      
-      // Actualizar last_status_change
       updates.last_status_change = new Date();
     }
 
-    // Si cambió el vendedor, agregar al historial
     if (updates.vendedor !== undefined && updates.vendedor !== currentLead[0].assigned_to) {
       let nuevoVendedor = 'Sin asignar';
       if (updates.vendedor) {
@@ -327,7 +426,6 @@ router.put('/:id', async (req, res) => {
       });
     }
 
-    // Preparar campos para actualizar
     const fields = [];
     const values = [];
 
@@ -358,10 +456,8 @@ router.put('/:id', async (req, res) => {
       }
     });
 
-    // Siempre actualizar el historial
     fields.push('historial = ?');
     values.push(JSON.stringify(historial));
-
     values.push(leadId);
 
     await req.db.query(
@@ -379,7 +475,7 @@ router.put('/:id', async (req, res) => {
     }
     
     lead.entrega = Boolean(lead.entrega);
-    lead.vendedor = lead.assigned_to; // ✅ Mapear assigned_to a vendedor
+    lead.vendedor = lead.assigned_to;
 
     console.log(`✅ Lead actualizado: ID ${leadId} por ${req.user.name}`);
     
