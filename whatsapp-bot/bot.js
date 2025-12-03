@@ -15,16 +15,14 @@ const BOT_CONFIG = {
   CRM_SOURCE: 'whatsapp',
   MARCA: 'fiat',
   EQUIPO: process.env.BOT_EQUIPO || 'principal',
-  INACTIVITY_TIMEOUT: parseInt(process.env.BOT_TIMEOUT || '600000') // 10 minutos en milisegundos
+  INACTIVITY_TIMEOUT: parseInt(process.env.BOT_TIMEOUT || '600000')
 };
 
-// Configuración del CRM
 const CRM_CONFIG = {
   baseUrl: process.env.CRM_BASE_URL || "http://localhost:3001/api",
   timeout: 30000
 };
 
-// Modelos de FIAT con información completa
 const MODELOS_FIAT = {
   'titano': { 
     nombre: 'TITANO ENDURANCE MT 4X4',
@@ -95,12 +93,10 @@ const temporizadores = {};
 let sockGlobal = null;
 let isReconnecting = false;
 let reconnectAttempts = 0;
-let socketConectado = false;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
 const logger = pino({ level: 'silent' });
 
-// Sistema de logging
 function log(nivel, mensaje, data = null) {
   const timestamp = new Date().toISOString();
   const logMsg = `[${timestamp}] [${BOT_CONFIG.BOT_ID}] ${nivel}: ${mensaje}`;
@@ -119,76 +115,175 @@ function log(nivel, mensaje, data = null) {
   }
 }
 
-// Obtener número real del contacto
 async function obtenerNumeroReal(msg, sock) {
   try {
     const from = msg.key.remoteJid;
     
-    // 1. Intentar obtener de participant primero
+    log('INFO', '🔍 Iniciando extracción de número...');
+    
+    // PRIORIDAD 1: msg.key.participant
     if (msg.key.participant && !msg.key.participant.includes('lid')) {
       const numero = msg.key.participant.split('@')[0];
-      log('INFO', `✅ Número extraído de participant: ${numero}`);
+      log('INFO', `✅ MÉTODO 1: Número extraído de participant: ${numero}`);
       return numero;
     }
     
-    // 2. Si es @s.whatsapp.net normal
+    // PRIORIDAD 2: remoteJid @s.whatsapp.net
     if (from && from.includes('@s.whatsapp.net') && !from.includes('lid')) {
       const numero = from.split('@')[0];
-      log('INFO', `✅ Número extraído de remoteJid: ${numero}`);
+      log('INFO', `✅ MÉTODO 2: Número extraído de remoteJid: ${numero}`);
       return numero;
     }
     
-    // 3. Si es @lid, intentar resolverlo
+    // PRIORIDAD 3: contextInfo.participant
+    if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
+      const participant = msg.message.extendedTextMessage.contextInfo.participant;
+      if (!participant.includes('lid') && participant.includes('@s.whatsapp.net')) {
+        const numero = participant.split('@')[0];
+        log('INFO', `✅ MÉTODO 3: Número extraído de contextInfo.participant: ${numero}`);
+        return numero;
+      }
+    }
+    
+    // PRIORIDAD 4: Buscar @s.whatsapp.net en TODO el mensaje
+    try {
+      const msgString = JSON.stringify(msg);
+      const whatsappMatches = msgString.match(/(\d{10,13})@s\.whatsapp\.net/g);
+      if (whatsappMatches && whatsappMatches.length > 0) {
+        const numeros = whatsappMatches.map(match => match.split('@')[0]);
+        const numerosUnicos = [...new Set(numeros)];
+        
+        log('INFO', `📱 MÉTODO 4: Números @s.whatsapp.net encontrados: ${numerosUnicos.join(', ')}`);
+        
+        const numeroArgentino = numerosUnicos.find(n => n.startsWith('54') && n.length >= 12);
+        if (numeroArgentino) {
+          log('INFO', `✅ MÉTODO 4: Número argentino seleccionado: ${numeroArgentino}`);
+          return numeroArgentino;
+        }
+        
+        const numeroCompleto = numerosUnicos.sort((a, b) => b.length - a.length)[0];
+        log('INFO', `✅ MÉTODO 4: Número seleccionado: ${numeroCompleto}`);
+        return numeroCompleto;
+      }
+    } catch (error) {
+      log('WARN', `⚠️ Error en búsqueda de @s.whatsapp.net: ${error.message}`);
+    }
+    
+    // SI ES @lid: INTENTAR MÚLTIPLES MÉTODOS DE CONVERSIÓN
     if (from && from.includes('@lid')) {
-      log('WARN', `⚠️ Contacto @lid detectado: ${from}, intentando resolver...`);
+      log('WARN', `⚠️ Contacto @lid detectado: ${from}`);
+      log('INFO', '🔄 Intentando resolver @lid con múltiples métodos...');
       
       try {
+        const lidNumber = from.split('@')[0];
+        
+        const variaciones = [
+          lidNumber,
+          lidNumber.replace(/^549/, '54'),
+          lidNumber.replace(/^54/, '549'),
+          lidNumber.substring(2),
+          '549' + lidNumber.substring(2)
+        ];
+        
+        log('INFO', `🔍 Probando ${variaciones.length} variaciones con onWhatsApp...`);
+        
+        for (const variacion of variaciones) {
+          try {
+            const jidToTest = `${variacion}@s.whatsapp.net`;
+            log('INFO', `   Probando: ${jidToTest}`);
+            
+            const [result] = await sock.onWhatsApp(jidToTest);
+            if (result && result.jid && !result.jid.includes('lid')) {
+              const numero = result.jid.split('@')[0];
+              log('INFO', `✅ MÉTODO A (onWhatsApp): Número convertido de @lid: ${numero}`);
+              return numero;
+            }
+          } catch (e) {
+            // Continuar
+          }
+        }
+        
         const msgString = JSON.stringify(msg);
         const numberMatches = msgString.match(/54\d{10,11}/g);
+        
         if (numberMatches && numberMatches.length > 0) {
           const uniqueNumbers = [...new Set(numberMatches)];
-          log('INFO', `📱 Números encontrados en mensaje: ${uniqueNumbers.join(', ')}`);
-          return uniqueNumbers[0];
+          log('INFO', `📱 MÉTODO B: Números 54XX encontrados en @lid: ${uniqueNumbers.join(', ')}`);
+          
+          for (const num of uniqueNumbers) {
+            try {
+              const jidToTest = `${num}@s.whatsapp.net`;
+              const [result] = await sock.onWhatsApp(jidToTest);
+              
+              if (result && result.exists && !result.jid.includes('lid')) {
+                const numero = result.jid.split('@')[0];
+                log('INFO', `✅ MÉTODO B: Número validado desde @lid: ${numero}`);
+                return numero;
+              }
+            } catch (e) {
+              // Continuar
+            }
+          }
+          
+          const numeroCompleto = uniqueNumbers.sort((a, b) => b.length - a.length)[0];
+          log('WARN', `⚠️ MÉTODO B: Usando número de @lid sin validar: ${numeroCompleto}`);
+          return numeroCompleto;
         }
-      } catch (err) {
-        log('WARN', `⚠️ Error buscando número en objeto mensaje: ${err.message}`);
+        
+        const allNumberMatches = msgString.match(/\d{10,13}/g);
+        if (allNumberMatches && allNumberMatches.length > 0) {
+          const uniqueNums = [...new Set(allNumberMatches)];
+          log('INFO', `📱 MÉTODO C: Números genéricos encontrados: ${uniqueNums.join(', ')}`);
+          
+          for (const num of uniqueNums) {
+            if (num.length >= 10 && (num.startsWith('54') || num.startsWith('11') || num.startsWith('9'))) {
+              log('INFO', `✅ MÉTODO C: Número genérico seleccionado: ${num}`);
+              return num;
+            }
+          }
+        }
+        
+      } catch (error) {
+        log('ERROR', `❌ Error resolviendo @lid: ${error.message}`);
       }
       
-      log('WARN', `⚠️ No se pudo resolver @lid automáticamente: ${from}`);
+      log('ERROR', `❌ @lid NO RESUELTO: ${from}`);
+      log('ERROR', `⚠️ Se solicitará número manual al usuario`);
       return null;
     }
     
-    log('WARN', `⚠️ Formato de contacto no reconocido: ${from}`);
+    const numero = from.split('@')[0];
+    if (numero && numero.length >= 10 && !numero.includes('lid')) {
+      log('WARN', `⚠️ FALLBACK: Usando número directo: ${numero}`);
+      return numero;
+    }
+    
+    log('ERROR', `❌ NO SE PUDO OBTENER NÚMERO de: ${from}`);
     return null;
     
   } catch (error) {
-    log('ERROR', `❌ Error obteniendo número real: ${error.message}`);
+    log('ERROR', `❌ Error crítico en obtenerNumeroReal: ${error.message}`);
     return null;
   }
 }
 
-// Función para buscar modelo por input del usuario
 function encontrarModeloPorInput(input, modelos) {
   const inputLower = input.toLowerCase().trim();
   const inputNum = parseInt(inputLower);
   
-  // Si es un número, buscar por índice
   const modelosArray = Object.entries(modelos);
   if (!isNaN(inputNum) && inputNum > 0 && inputNum <= modelosArray.length) {
     const [key, modelo] = modelosArray[inputNum - 1];
     return { key, ...modelo };
   }
   
-  // Buscar por nombre o alias
   for (const [key, modelo] of modelosArray) {
     const nombreLower = modelo.nombre.toLowerCase();
     
-    // Buscar coincidencia exacta o parcial
     if (nombreLower.includes(inputLower) || inputLower.includes(key)) {
       return { key, ...modelo };
     }
     
-    // Buscar en alias si existen
     if (modelo.alias) {
       for (const alias of modelo.alias) {
         if (alias.toLowerCase().includes(inputLower) || inputLower.includes(alias.toLowerCase())) {
@@ -201,7 +296,6 @@ function encontrarModeloPorInput(input, modelos) {
   return null;
 }
 
-// Temporizador de inactividad
 function iniciarTemporizador(from, cliente, sock) {
   clearTimeout(temporizadores[from]);
   
@@ -221,198 +315,180 @@ function iniciarTemporizador(from, cliente, sock) {
   }, BOT_CONFIG.INACTIVITY_TIMEOUT);
 }
 
-// Enviar mensaje con reintentos
-async function enviarMensajeSeguro(sock, to, content, maxRetries = 3) {
-  if (!socketConectado || !sock) {
-    log('WARN', `⚠️ Socket no conectado, mensaje no enviado a ${to}`);
-    return null;
-  }
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await sock.sendMessage(to, content);
-      log('INFO', `✅ Mensaje enviado correctamente a ${to} (intento ${attempt})`);
-      return result;
-    } catch (error) {
-      log('ERROR', `❌ Error enviando mensaje (intento ${attempt}/${maxRetries}): ${error.message}`);
-      
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-      } else {
-        throw error;
-      }
-    }
-  }
-}
-
-// Enviar lead al CRM
 async function enviarACRM(leadData) {
+  const payload = {
+    nombre: leadData.nombre,
+    telefono: leadData.numeroReal || leadData.telefono,
+    email: '',
+    fuente: BOT_CONFIG.CRM_SOURCE,
+    marca: BOT_CONFIG.MARCA,
+    vehiculo: leadData.vehiculo || '',
+    equipo: BOT_CONFIG.EQUIPO,
+    notas: `Lead generado por bot WhatsApp - ${BOT_CONFIG.BOT_NAME}`
+  };
+
   try {
-    log('INFO', '📤 Enviando lead al CRM...', leadData);
-    
-    const webhookSecret = process.env.WEBHOOK_SECRET || 'auto-del-sol-fiat-2024';
-    
-    const payload = {
-      nombre: leadData.nombre,
-      telefono: leadData.numeroReal || leadData.telefono,
-      modelo: leadData.vehiculo,
-      formaPago: 'Plan de ahorro',
-      fuente: BOT_CONFIG.CRM_SOURCE,
-      estado: 'nuevo',
-      equipo: BOT_CONFIG.EQUIPO,
-      notas: `Lead generado por bot WhatsApp ${BOT_CONFIG.BOT_NAME}\nMarca: ${BOT_CONFIG.MARCA.toUpperCase()}\nModelo consultado: ${leadData.vehiculo}`,
-      webhookKey: webhookSecret
-    };
-    
-    log('INFO', '📦 Payload para CRM:', payload);
+    log('INFO', '📤 Enviando lead al CRM...', payload);
     
     const response = await axios.post(
-      `${CRM_CONFIG.baseUrl}/leads/bot-webhook`,
+      `${CRM_CONFIG.baseUrl}/leads`,
       payload,
       {
         timeout: CRM_CONFIG.timeout,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Key': webhookSecret
-        }
+        headers: { 'Content-Type': 'application/json' }
       }
     );
-    
-    if (response.data && response.data.lead) {
-      log('INFO', '✅ Lead guardado en CRM exitosamente', {
-        id: response.data.lead.id,
-        nombre: response.data.lead.nombre,
-        vendedor: response.data.lead.vendedor || response.data.lead.assigned_to
-      });
-      
-      if (response.data.lead.vendedor || response.data.lead.assigned_to) {
-        log('INFO', `🎯 Lead asignado a vendedor ID: ${response.data.lead.vendedor || response.data.lead.assigned_to}`);
-      }
+
+    if (response.status === 201 || response.status === 200) {
+      log('INFO', '✅ Lead enviado exitosamente al CRM', response.data);
+      return true;
     } else {
-      log('WARN', '⚠️ Lead guardado pero respuesta inusual del CRM', response.data);
+      log('WARN', `⚠️ Respuesta inesperada del CRM: ${response.status}`);
+      return false;
     }
-    
-    return response.data;
-    
   } catch (error) {
-    log('ERROR', '❌ Error enviando al CRM:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
+    log('ERROR', '❌ Error enviando lead al CRM', {
+      error: error.message,
+      response: error.response?.data
     });
-    
-    if (error.response?.status === 401) {
-      log('ERROR', '🔒 Error de autenticación con CRM - verificar credenciales');
-    } else if (error.response?.status === 404) {
-      log('ERROR', '🔍 Endpoint del CRM no encontrado - verificar URL');
-    }
-    
     throw error;
   }
 }
 
-// Inicialización del bot
+async function enviarMensajeSeguro(sock, to, contenido, intentos = 3) {
+  for (let i = 0; i < intentos; i++) {
+    try {
+      await sock.sendMessage(to, contenido);
+      return true;
+    } catch (error) {
+      log('WARN', `⚠️ Intento ${i + 1}/${intentos} falló al enviar mensaje: ${error.message}`);
+      if (i === intentos - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  return false;
+}
+
 const init = async () => {
   if (isReconnecting) {
-    log('INFO', '⏳ Ya hay una reconexión en progreso...');
+    log('WARN', '⚠️ Ya hay una reconexión en progreso');
     return;
-  }
-  
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    log('ERROR', `❌ Máximo de intentos de reconexión alcanzado (${MAX_RECONNECT_ATTEMPTS})`);
-    process.exit(1);
   }
 
   isReconnecting = true;
 
   try {
-    log('INFO', '🚀 Iniciando bot de WhatsApp FIAT...');
-    
+    log('INFO', `🚀 Iniciando ${BOT_CONFIG.BOT_ID}...`);
+    log('INFO', `📁 Directorio de sesión: ${BOT_CONFIG.SESSION_DIR}`);
+
+    if (!fs.existsSync(BOT_CONFIG.SESSION_DIR)) {
+      fs.mkdirSync(BOT_CONFIG.SESSION_DIR, { recursive: true });
+      log('INFO', `✅ Directorio de sesión creado`);
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(BOT_CONFIG.SESSION_DIR);
     const { version } = await fetchLatestBaileysVersion();
 
+    log('INFO', `📱 Versión de Baileys: ${version.join('.')}`);
+
     const sock = makeWASocket({
-      auth: state,
-      printQRInTerminal: true,
-      logger,
       version,
-      defaultQueryTimeoutMs: undefined,
-      syncFullHistory: false,
-      markOnlineOnConnect: true,
+      logger,
+      printQRInTerminal: false,
+      auth: state,
+      browser: ['Bot FIAT', 'Chrome', '1.0.0'],
       connectTimeoutMs: 60000,
-      qrTimeout: 60000,
-      browser: ['Bot FIAT', 'Chrome', '1.0.0']
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      markOnlineOnConnect: true,
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: true,
+      getMessage: async () => undefined
     });
 
     sockGlobal = sock;
-
-    sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        log('INFO', '📱 QR Code generado:');
+        log('INFO', '📱 QR CODE GENERADO');
+        console.log('\n' + '='.repeat(50));
+        console.log(`${BOT_CONFIG.BOT_NAME} - ${BOT_CONFIG.BOT_ID}`);
+        console.log('='.repeat(50));
+        console.log('\n🔲 ESCANEA ESTE CÓDIGO QR:\n');
         qrcode.generate(qr, { small: true });
-      }
-
-      if (connection === 'close') {
-        socketConectado = false;
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        
-        log('WARN', `⚠️ Conexión cerrada. ¿Reconectar? ${shouldReconnect}`);
-        
-        if (shouldReconnect) {
-          isReconnecting = false;
-          reconnectAttempts++;
-          const delay = Math.min(5000 * reconnectAttempts, 30000);
-          log('INFO', `🔄 Reintentando conexión en ${delay/1000} segundos...`);
-          setTimeout(() => init(), delay);
-        } else {
-          log('ERROR', '❌ Bot desconectado (logout)');
-          process.exit(0);
-        }
+        console.log('\n' + '='.repeat(50) + '\n');
       }
 
       if (connection === 'open') {
-        socketConectado = true;
+        console.log('\n' + '='.repeat(50));
+        console.log(`✅ ${BOT_CONFIG.BOT_NAME} CONECTADO!`);
+        console.log(`${BOT_CONFIG.BOT_ID}`);
+        console.log('='.repeat(50) + '\n');
+        
         isReconnecting = false;
         reconnectAttempts = 0;
-        log('INFO', `✅ Bot ${BOT_CONFIG.BOT_NAME} de ${BOT_CONFIG.COMPANY} conectado exitosamente!`);
-        log('INFO', `📞 Marca: ${BOT_CONFIG.MARCA.toUpperCase()}`);
-        log('INFO', `👥 Equipo: ${BOT_CONFIG.EQUIPO}`);
-        log('INFO', `⏰ Timeout de inactividad: ${BOT_CONFIG.INACTIVITY_TIMEOUT / 60000} minutos`);
+        log('INFO', '✅ Bot conectado exitosamente');
+      }
+
+      if (connection === 'close') {
+        isReconnecting = false;
+        sockGlobal = null;
+        
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        log('WARN', `⚠️ Conexión cerrada. Código: ${statusCode}`);
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          log('ERROR', '🚫 Sesión cerrada por WhatsApp');
+          reconnectAttempts = 0;
+          return;
+        }
+
+        if (statusCode !== DisconnectReason.loggedOut && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttempts++;
+          const delay = Math.min(5000 * reconnectAttempts, 60000);
+          log('INFO', `🔄 Reconectando en ${delay/1000}s (Intento ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          
+          setTimeout(() => {
+            isReconnecting = false;
+            init();
+          }, delay);
+        } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          log('ERROR', '❌ Máximo de intentos alcanzado');
+        }
       }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
       try {
+        if (type !== 'notify') return;
         const msg = messages[0];
         
-        if (!msg.message || msg.key.fromMe) return;
-        
-        if (!msg.message || Object.keys(msg.message).length === 0) {
-          return;
-        }
+        if (msg.key.fromMe) return;
+        if (msg.key.remoteJid.includes('@g.us')) return;
+        if (!msg.message || Object.keys(msg.message).length === 0) return;
         
         const numeroReal = await obtenerNumeroReal(msg, sock);
         const from = msg.key.remoteJid;
         
-        log('INFO', `📱 Mensaje de: ${numeroReal || 'desconocido'}`);
+        log('INFO', `📱 Mensaje de: ${from}`);
+        log('INFO', `📞 Número real: ${numeroReal || 'NO RESUELTO'}`);
 
-        // SI NO PUDIMOS OBTENER EL NÚMERO, PEDIRLO DIRECTAMENTE
+        let texto = '';
+        if (msg.message?.conversation) texto = msg.message.conversation;
+        else if (msg.message?.extendedTextMessage?.text) texto = msg.message.extendedTextMessage.text;
+        else if (msg.message?.buttonsResponseMessage?.selectedButtonId) texto = msg.message.buttonsResponseMessage.selectedButtonId;
+        else if (msg.message?.templateButtonReplyMessage?.selectedId) texto = msg.message.templateButtonReplyMessage.selectedId;
+        else if (msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId) texto = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+        else return;
+
+        // SOLO SI NO HAY NÚMERO: SOLICITAR MANUALMENTE
         if (!numeroReal) {
-          log('WARN', `⚠️ No se pudo obtener número de: ${from}, solicitando manualmente...`);
+          log('WARN', `⚠️ CASO EXTREMO: Solicitando número manual`);
           
-          let texto = '';
-          if (msg.message?.conversation) texto = msg.message.conversation;
-          else if (msg.message?.extendedTextMessage?.text) texto = msg.message.extendedTextMessage.text;
-          else if (msg.message?.buttonsResponseMessage?.selectedButtonId) texto = msg.message.buttonsResponseMessage.selectedButtonId;
-          else if (msg.message?.templateButtonReplyMessage?.selectedId) texto = msg.message.templateButtonReplyMessage.selectedId;
-          else if (msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId) texto = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
-          else return;
-          
-          // Si no hay conversación iniciada, pedir teléfono
           if (!datosCliente[from]) {
             datosCliente[from] = { 
               paso: 'solicitar_telefono',
@@ -420,7 +496,8 @@ const init = async () => {
               numeroReal: null,
               esLid: true,
               fromLid: from,
-              pushName: msg.pushName || 'Cliente'
+              pushName: msg.pushName || 'Cliente',
+              intentosSolicitud: 0
             };
             
             await enviarMensajeSeguro(sock, from, {
@@ -429,7 +506,6 @@ const init = async () => {
             return;
           }
           
-          // Si ya está en conversación, verificar si nos dio el teléfono
           const cliente = datosCliente[from];
           
           if (cliente.paso === 'solicitar_telefono') {
@@ -451,9 +527,8 @@ const init = async () => {
               cliente.numeroReal = numeroExtraido;
               cliente.paso = 'modelo';
               
-              log('INFO', `✅ Número obtenido manualmente de @lid: ${numeroExtraido}`);
+              log('INFO', `✅ Número obtenido MANUALMENTE: ${numeroExtraido}`);
               
-              // Mostrar modelos disponibles
               const modelosArray = Object.entries(MODELOS_FIAT);
               const lista = modelosArray.map(([key, modelo], i) => 
                 `${i + 1}. ${modelo.nombre}`
@@ -466,19 +541,25 @@ const init = async () => {
               });
               return;
             } else {
+              cliente.intentosSolicitud = (cliente.intentosSolicitud || 0) + 1;
+              
+              if (cliente.intentosSolicitud >= 3) {
+                await enviarMensajeSeguro(sock, from, {
+                  text: '😔 No logro obtener tu número correctamente.\n\nPor favor, llamanos directamente o escribinos por Instagram.\n\n¡Gracias por tu interés en FIAT! 🚗'
+                });
+                delete datosCliente[from];
+                return;
+              }
+              
               await enviarMensajeSeguro(sock, from, {
                 text: '📱 Por favor, envíame un número válido con código de área.\n\n💡 Ejemplo: *11 2345 6789*'
               });
               return;
             }
           }
-          
-          log('INFO', `✅ Procesando conversación @lid con número manual: ${cliente.numeroReal}`);
         }
 
-        log('INFO', `✅ Procesando conversación con número real: ${numeroReal}`);
-
-        // INICIAR CONVERSACIÓN
+        // FLUJO NORMAL CON NÚMERO REAL
         if (!datosCliente[from]) {
           datosCliente[from] = { 
             paso: 'modelo', 
@@ -499,18 +580,8 @@ const init = async () => {
           return;
         }
 
-        // Extraer texto del mensaje
-        let texto = '';
-        if (msg.message?.conversation) texto = msg.message.conversation;
-        else if (msg.message?.extendedTextMessage?.text) texto = msg.message.extendedTextMessage.text;
-        else if (msg.message?.buttonsResponseMessage?.selectedButtonId) texto = msg.message.buttonsResponseMessage.selectedButtonId;
-        else if (msg.message?.templateButtonReplyMessage?.selectedId) texto = msg.message.templateButtonReplyMessage.selectedId;
-        else if (msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId) texto = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
-        else return;
-
         const cliente = datosCliente[from];
 
-        // PASO 1: SELECCIÓN DE MODELO
         if (cliente.paso === 'modelo') {
           const modeloEncontrado = encontrarModeloPorInput(texto, MODELOS_FIAT);
 
@@ -533,7 +604,6 @@ const init = async () => {
           return;
         }
 
-        // PASO 2: NOMBRE DEL CLIENTE
         if (cliente.paso === 'nombre') {
           cliente.nombre = texto;
           clearTimeout(temporizadores[from]);
@@ -543,7 +613,6 @@ const init = async () => {
             text: `¡Gracias, *${cliente.nombre.charAt(0).toUpperCase() + cliente.nombre.slice(1)}*! 🎉\n\nUn especialista de *Auto del Sol* te contactará pronto para brindarte toda la información sobre tu *${cliente.modelo}*.\n\n✨ *Estás a un paso de tu próximo FIAT* ✨`
           });
 
-          // Preparar datos del lead
           const leadData = {
             nombre: cliente.nombre,
             telefono: from,
@@ -552,10 +621,9 @@ const init = async () => {
             vehiculo: cliente.modelo
           };
 
-          // Enviar al CRM
           try {
             await enviarACRM(leadData);
-            log('INFO', `✅ Lead procesado exitosamente: ${cliente.nombre} - ${cliente.modelo}`);
+            log('INFO', `✅ Lead procesado: ${cliente.nombre} - ${cliente.modelo}`);
           } catch (error) {
             log('ERROR', `❌ Error procesando lead: ${error.message}`);
           }
@@ -569,34 +637,44 @@ const init = async () => {
 
   } catch (error) {
     isReconnecting = false;
-    socketConectado = false;
     log('ERROR', '💥 Error crítico en init', error);
+    
     reconnectAttempts++;
     
-    const delay = Math.min(10000 * reconnectAttempts, 60000);
-    log('INFO', `🔄 Reintentando en ${delay/1000} segundos...`);
-    setTimeout(() => init(), delay);
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(5000 * reconnectAttempts, 30000);
+      log('INFO', `🔄 Reintentando en ${delay/1000} segundos...`);
+      setTimeout(() => init(), delay);
+    }
   }
 };
 
-// Manejo de señales de terminación
 process.on('SIGINT', async () => {
-  log('INFO', '🛑 Deteniendo bot FIAT...');
-  socketConectado = false;
+  log('INFO', '🛑 Deteniendo bot...');
   if (sockGlobal) {
-    await sockGlobal.logout();
+    try {
+      await sockGlobal.logout();
+    } catch (err) {
+      log('ERROR', `Error al cerrar: ${err.message}`);
+    }
   }
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  log('INFO', '🛑 Deteniendo bot FIAT...');
-  socketConectado = false;
+  log('INFO', '🛑 Deteniendo bot...');
   if (sockGlobal) {
-    await sockGlobal.logout();
+    try {
+      await sockGlobal.logout();
+    } catch (err) {
+      log('ERROR', `Error al cerrar: ${err.message}`);
+    }
   }
   process.exit(0);
 });
 
-// Exportar función de inicio para CommonJS
+// Iniciar el bot
+log('INFO', '🎬 Arrancando bot FIAT...');
+init();
+
 module.exports = { startBot: init };

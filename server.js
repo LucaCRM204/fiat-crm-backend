@@ -12,7 +12,7 @@ const leadsRouter = require('./routes/leads');
 const presupuestosRouter = require('./routes/presupuestos');
 
 // Rutas opcionales con manejo de errores
-let usersRouter, notasRouter, recordatoriosRouter, cotizacionesRouter, tareasRouter, pushRouter, metasRouter;
+let usersRouter, notasRouter, recordatoriosRouter, cotizacionesRouter, tareasRouter, pushRouter, metasRouter, webhooksRouter;
 
 try { 
   usersRouter = require('./routes/users'); 
@@ -65,6 +65,16 @@ try {
   metasRouter = null;
 }
 
+// ✅ NUEVO: Cargar webhooks para Zapier/Sheets/Bots externos
+try {
+  webhooksRouter = require('./routes/webhooks');
+  console.log('✅ Módulo webhooks cargado correctamente');
+} catch (err) {
+  console.warn('⚠️ Ruta webhooks no disponible:', err.message);
+  console.error('   Detalle del error:', err);
+  webhooksRouter = null;
+}
+
 // ✅ AGREGAR: Cargar bot de WhatsApp
 let botFiat = null;
 try {
@@ -95,7 +105,7 @@ const corsOpts = {
   origin: true,
   credentials: true,
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token','Accept'],
+  allowedHeaders: ['Content-Type','Authorization','X-CSRF-Token','Accept','x-webhook-key'],
   optionsSuccessStatus: 200,
 };
 
@@ -113,17 +123,23 @@ app.use((req, res, next) => {
 // RUTAS PRINCIPALES
 // ============================================
 
-console.log('🔍 Registrando authRouter...');
+// ✅ WEBHOOKS PRIMERO (SIN autenticación - para Zapier, bots externos, etc.)
+if (webhooksRouter) {
+  app.use('/webhooks', webhooksRouter);
+  console.log('✅ Ruta /webhooks registrada (sin auth)');
+}
+
+console.log('🔐 Registrando authRouter...');
 console.log('authRouter tipo:', typeof authRouter);
 app.use('/api/auth', authRouter);
 console.log('✅ authRouter registrado');
 
-console.log('🔍 Registrando leadsRouter...');
+console.log('🔐 Registrando leadsRouter...');
 console.log('leadsRouter tipo:', typeof leadsRouter);
 app.use('/api/leads', leadsRouter);
 console.log('✅ leadsRouter registrado');
 
-console.log('🔍 Registrando presupuestosRouter...');
+console.log('🔐 Registrando presupuestosRouter...');
 console.log('presupuestosRouter tipo:', typeof presupuestosRouter);
 app.use('/api/presupuestos', presupuestosRouter);
 console.log('✅ presupuestosRouter registrado');
@@ -169,7 +185,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ 
     ok: true, 
     ts: new Date().toISOString(),
-    version: '1.3.0',
+    version: '1.3.1',
     features: {
       users: !!usersRouter,
       notas: !!notasRouter,
@@ -178,7 +194,8 @@ app.get('/api/health', (_req, res) => {
       tareas: !!tareasRouter,
       push: !!pushRouter,
       metas: !!metasRouter,
-      whatsappBot: !!botFiat, // ✅ AGREGADO
+      webhooks: !!webhooksRouter,  // ✅ NUEVO
+      whatsappBot: !!botFiat,
     }
   });
 });
@@ -187,7 +204,7 @@ app.get('/api/health', (_req, res) => {
 app.get('/', (_req, res) => {
   res.json({ 
     message: 'Alluma CRM Backend API', 
-    version: '1.3.0',
+    version: '1.3.1',
     endpoints: {
       auth: '/api/auth',
       users: usersRouter ? '/api/users' : null,
@@ -199,6 +216,7 @@ app.get('/', (_req, res) => {
       tareas: tareasRouter ? '/api/tareas' : null,
       push: pushRouter ? '/api/push' : null,
       metas: metasRouter ? '/api/metas' : null,
+      webhooks: webhooksRouter ? '/webhooks' : null,  // ✅ NUEVO
       health: '/api/health',
     }
   });
@@ -229,11 +247,11 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log('╔═══════════════════════════════════════╗');
-  console.log(`🚀 Alluma CRM Backend v1.3.0`);
+  console.log('╔════════════════════════════════════════╗');
+  console.log(`🚀 Alluma CRM Backend v1.3.1`);
   console.log(`📡 Servidor escuchando en puerto: ${PORT}`);
   console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
-  console.log('╠═══════════════════════════════════════╣');
+  console.log('╠════════════════════════════════════════╣');
   console.log('📋 Funcionalidades disponibles:');
   console.log(`   ✅ Auth & Leads & Presupuestos`);
   console.log(`   ${usersRouter ? '✅' : '⚠️'} Users`);
@@ -243,8 +261,9 @@ app.listen(PORT, () => {
   console.log(`   ${tareasRouter ? '✅' : '⚠️'} Tareas`);
   console.log(`   ${pushRouter ? '✅' : '⚠️'} Push Notifications`);
   console.log(`   ${metasRouter ? '✅' : '⚠️'} Metas`);
+  console.log(`   ${webhooksRouter ? '✅' : '⚠️'} Webhooks (Zapier/Sheets)`);
   console.log(`   ${botFiat ? '✅' : '⚠️'} WhatsApp Bot`);
-  console.log('╚═══════════════════════════════════════╝');
+  console.log('╚════════════════════════════════════════╝');
   
   // ✅ INICIAR BOT DE WHATSAPP
   if (botFiat && process.env.ENABLE_WHATSAPP_BOT !== 'false') {

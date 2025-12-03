@@ -28,10 +28,6 @@ router.post('/whatsapp-lead', async (req, res) => {
       });
     }
 
-    // Importar función Round Robin desde leads.js
-    // Como no podemos importar directamente, haremos una versión simplificada aquí
-    // O mejor aún, lo haremos inline
-
     // Obtener siguiente vendedor (Round Robin)
     let vendedorAsignado = null;
     let nombreVendedor = 'Sin asignar';
@@ -167,6 +163,150 @@ router.post('/whatsapp-lead', async (req, res) => {
 });
 
 // ============================================
+// WEBHOOK PARA ZAPIER/GOOGLE SHEETS - LEAD
+// ============================================
+router.post('/sheets-lead', async (req, res) => {
+  try {
+    // Verificar clave secreta
+    const webhookKey = req.headers['x-webhook-key'] || req.body.webhookKey;
+    const expectedKey = process.env.WEBHOOK_SECRET || 'auto-del-sol-fiat-2024';
+    
+    if (!webhookKey || webhookKey !== expectedKey) {
+      console.log('❌ Webhook Sheets Lead: Intento de acceso no autorizado');
+      return res.status(401).json({ error: 'No autorizado' });
+    }
+
+    console.log('✅ Webhook Sheets Lead: Clave validada correctamente');
+    console.log('📩 Datos recibidos:', JSON.stringify(req.body, null, 2));
+
+    const { nombre, telefono, modelo, formaPago, notas, vendedorId } = req.body;
+
+    // Validaciones básicas
+    if (!nombre || !telefono || !modelo) {
+      return res.status(400).json({ 
+        error: 'Faltan campos requeridos: nombre, teléfono y modelo son obligatorios',
+        received: { nombre, telefono, modelo }
+      });
+    }
+
+    // ========================================
+    // ROUND ROBIN ENTRE 2 VENDEDORES ESPECÍFICOS
+    // ========================================
+    
+    // 🔴 CONFIGURA AQUÍ LOS IDs DE TUS 2 VENDEDORES
+    const VENDEDORES_SHEETS = [
+      {{ id: 42, name: 'Carlos Severich' },
+      { id: 55, name: 'Franco Molina' }  
+    ];
+    
+    let vendedorAsignado = null;
+    let nombreVendedor = 'Sin asignar';
+
+    try {
+      // Si viene vendedorId específico, usarlo directamente
+      if (vendedorId) {
+        const vendorFound = VENDEDORES_SHEETS.find(v => v.id === parseInt(vendedorId));
+        if (vendorFound) {
+          vendedorAsignado = vendorFound.id;
+          nombreVendedor = vendorFound.name;
+          console.log(`📌 Vendedor específico asignado: ${nombreVendedor}`);
+        }
+      }
+      
+      // Si no hay vendedor específico, usar Round Robin
+      if (!vendedorAsignado) {
+        // Obtener el último lead de sheets para round robin
+        const [ultimoLead] = await req.db.query(`
+          SELECT assigned_to 
+          FROM leads 
+          WHERE fuente = 'sheets' 
+          AND assigned_to IN (${VENDEDORES_SHEETS.map(v => v.id).join(',')})
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `);
+
+        let siguienteVendedor;
+
+        if (ultimoLead.length === 0 || !ultimoLead[0].assigned_to) {
+          // Primer lead, asignar al primero
+          siguienteVendedor = VENDEDORES_SHEETS[0];
+        } else {
+          // Encontrar el índice del último y rotar
+          const ultimoId = ultimoLead[0].assigned_to;
+          const indiceActual = VENDEDORES_SHEETS.findIndex(v => v.id === ultimoId);
+          const siguienteIndice = (indiceActual + 1) % VENDEDORES_SHEETS.length;
+          siguienteVendedor = VENDEDORES_SHEETS[siguienteIndice];
+        }
+
+        vendedorAsignado = siguienteVendedor.id;
+        nombreVendedor = siguienteVendedor.name;
+        console.log(`🎯 Round Robin Sheets: Asignado a ${nombreVendedor} (ID: ${vendedorAsignado})`);
+      }
+
+    } catch (error) {
+      console.error('⚠️ Error en Round Robin Sheets:', error);
+      // Fallback: asignar al primero
+      vendedorAsignado = VENDEDORES_SHEETS[0].id;
+      nombreVendedor = VENDEDORES_SHEETS[0].name;
+    }
+
+    // Crear historial inicial
+    const historialInicial = JSON.stringify([
+      {
+        estado: 'nuevo',
+        timestamp: new Date().toISOString(),
+        usuario: 'Zapier/Google Sheets'
+      },
+      {
+        estado: `Asignado a ${nombreVendedor} (Round Robin Sheets)`,
+        timestamp: new Date().toISOString(),
+        usuario: 'Sistema'
+      }
+    ]);
+
+    // Insertar lead
+    const [result] = await req.db.query(
+      `INSERT INTO leads 
+      (nombre, telefono, modelo, formaPago, infoUsado, entrega, notas, estado, fuente, fecha, assigned_to, historial, created_by) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nombre,
+        telefono,
+        modelo,
+        formaPago || 'Consultar',
+        null,
+        0,
+        notas || '',
+        'nuevo',
+        'sheets',  // Fuente específica para identificar estos leads
+        new Date().toISOString().split('T')[0],
+        vendedorAsignado,
+        historialInicial,
+        vendedorAsignado
+      ]
+    );
+
+    console.log(`✅ Lead Sheets creado: ID ${result.insertId}, Vendedor: ${nombreVendedor}`);
+
+    res.status(201).json({ 
+      success: true,
+      leadId: result.insertId,
+      nombre: nombre,
+      vendedor: nombreVendedor,
+      vendedorId: vendedorAsignado,
+      message: 'Lead creado desde Google Sheets'
+    });
+
+  } catch (error) {
+    console.error('❌ Error webhook Sheets:', error);
+    res.status(500).json({ 
+      error: 'Error al crear lead',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
 // WEBHOOK PARA META/FACEBOOK
 // ============================================
 router.post('/meta', async (req, res) => {
@@ -223,6 +363,7 @@ router.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       'POST /webhooks/whatsapp-lead': 'Crear leads desde bot de WhatsApp',
+      'POST /webhooks/sheets-lead': 'Crear leads desde Google Sheets/Zapier',
       'POST /webhooks/meta': 'Recibir leads de Meta/Facebook',
       'POST /webhooks/whatsapp': 'Notificaciones de WhatsApp',
       'GET /webhooks/health': 'Health check'
