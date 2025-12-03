@@ -195,7 +195,7 @@ router.post('/sheets-lead', async (req, res) => {
     
     // 🔴 CONFIGURA AQUÍ LOS IDs DE TUS 2 VENDEDORES
     const VENDEDORES_SHEETS = [
-      {{ id: 42, name: 'Carlos Severich' },
+      { id: 42, name: 'Carlos Severich' },
       { id: 55, name: 'Franco Molina' }  
     ];
     
