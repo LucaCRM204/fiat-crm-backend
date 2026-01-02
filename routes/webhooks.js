@@ -190,13 +190,18 @@ router.post('/sheets-lead', async (req, res) => {
     }
 
     // ========================================
-    // ROUND ROBIN ENTRE 2 VENDEDORES ESPECÍFICOS
+    // ROUND ROBIN ENTRE 7 VENDEDORES ESPECÍFICOS
     // ========================================
     
-    // 🔴 CONFIGURA AQUÍ LOS IDs DE TUS 2 VENDEDORES
+    // 🔴 VENDEDORES CONFIGURADOS PARA SHEETS
     const VENDEDORES_SHEETS = [
       { id: 42, name: 'Carlos Severich' },
-      { id: 55, name: 'Franco Molina' }  
+      { id: 45, name: 'Sebastian Orrijola' },
+      { id: 55, name: 'Franco Molina' },
+      { id: 57, name: 'Maia Heredia' },
+      { id: 64, name: 'Juan Froy' },
+      { id: 65, name: 'Carlos Benavidez' },
+      { id: 66, name: 'Agustin Diaz' }
     ];
     
     let vendedorAsignado = null;
