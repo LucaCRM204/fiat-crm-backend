@@ -384,7 +384,7 @@ router.post('/zapier-cristaldo', async (req, res) => {
         0,
         notas || '',
         'nuevo',
-        'zapier-cristaldo',
+        'zapier',
         new Date().toISOString().split('T')[0],
         vendedorAsignado,
         'cristaldo',
