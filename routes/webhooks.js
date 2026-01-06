@@ -190,18 +190,13 @@ router.post('/sheets-lead', async (req, res) => {
     }
 
     // ========================================
-    // ROUND ROBIN ENTRE 7 VENDEDORES ESPECÍFICOS
+    // ROUND ROBIN ENTRE 2 VENDEDORES ESPECÍFICOS
     // ========================================
     
-    // 🔴 VENDEDORES CONFIGURADOS PARA SHEETS
+    // 🔴 CONFIGURA AQUÍ LOS IDs DE TUS 2 VENDEDORES
     const VENDEDORES_SHEETS = [
       { id: 42, name: 'Carlos Severich' },
-      { id: 45, name: 'Sebastian Orrijola' },
-      { id: 55, name: 'Franco Molina' },
-      { id: 57, name: 'Maia Heredia' },
-      { id: 64, name: 'Juan Froy' },
-      { id: 65, name: 'Carlos Benavidez' },
-      { id: 66, name: 'Agustin Diaz' }
+      { id: 55, name: 'Franco Molina' }  
     ];
     
     let vendedorAsignado = null;
@@ -312,6 +307,112 @@ router.post('/sheets-lead', async (req, res) => {
 });
 
 // ============================================
+// WEBHOOK ZAPIER - EQUIPO CRISTALDO (dinámico)
+// ============================================
+let cristaldoIndex = 0;
+
+router.post('/zapier-cristaldo', async (req, res) => {
+  try {
+    // Verificar clave secreta
+    const webhookKey = req.headers['x-webhook-key'];
+    if (webhookKey !== 'fiat-zapier-cristaldo-2024') {
+      console.log('❌ Webhook Zapier Cristaldo: No autorizado');
+      return res.status(401).json({ error: 'No autorizado' });
+    }
+
+    console.log('📩 Webhook Zapier Cristaldo recibido:', JSON.stringify(req.body, null, 2));
+
+    const { nombre, telefono, modelo, formaPago, notas } = req.body;
+
+    // Validaciones básicas
+    if (!nombre || !telefono) {
+      return res.status(400).json({ 
+        error: 'Nombre y teléfono son requeridos',
+        received: { nombre, telefono }
+      });
+    }
+
+    // Buscar vendedores del equipo Cristaldo (reportsTo = 70) dinámicamente
+    const [vendedores] = await req.db.query(`
+      SELECT id, name 
+      FROM users 
+      WHERE reportsTo = 70
+        AND role = 'vendedor'
+        AND active = 1
+      ORDER BY id ASC
+    `);
+
+    if (vendedores.length === 0) {
+      console.error('❌ No hay vendedores activos en el equipo de Cristaldo');
+      return res.status(500).json({ error: 'No hay vendedores activos en el equipo' });
+    }
+
+    // Round Robin
+    const vendedor = vendedores[cristaldoIndex % vendedores.length];
+    cristaldoIndex = (cristaldoIndex + 1) % vendedores.length;
+
+    const vendedorAsignado = vendedor.id;
+    const nombreVendedor = vendedor.name;
+
+    console.log(`🎯 Zapier Cristaldo: Asignado a ${nombreVendedor} (ID: ${vendedorAsignado})`);
+
+    // Crear historial inicial
+    const historialInicial = JSON.stringify([
+      {
+        estado: 'nuevo',
+        timestamp: new Date().toISOString(),
+        usuario: 'Zapier - Equipo Cristaldo'
+      },
+      {
+        estado: `Asignado a ${nombreVendedor} (Round Robin)`,
+        timestamp: new Date().toISOString(),
+        usuario: 'Sistema'
+      }
+    ]);
+
+    // Insertar lead
+    const [result] = await req.db.query(
+      `INSERT INTO leads 
+      (nombre, telefono, modelo, formaPago, infoUsado, entrega, notas, estado, fuente, fecha, assigned_to, equipo, historial, created_by) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nombre,
+        telefono,
+        modelo || 'Consultar',
+        formaPago || 'Consultar',
+        null,
+        0,
+        notas || '',
+        'nuevo',
+        'zapier-cristaldo',
+        new Date().toISOString().split('T')[0],
+        vendedorAsignado,
+        'cristaldo',
+        historialInicial,
+        vendedorAsignado
+      ]
+    );
+
+    console.log(`✅ Lead Zapier Cristaldo creado: ID ${result.insertId}, Vendedor: ${nombreVendedor}`);
+
+    res.status(201).json({ 
+      ok: true,
+      leadId: result.insertId,
+      message: `Lead asignado a ${nombreVendedor}`,
+      assignedTo: vendedorAsignado,
+      vendedor: nombreVendedor
+    });
+
+  } catch (error) {
+    console.error('❌ Error webhook Zapier Cristaldo:', error);
+    res.status(500).json({ 
+      error: 'Error al crear lead',
+      details: error.message 
+    });
+  }
+});
+
+// ============================================
 // WEBHOOK PARA META/FACEBOOK
 // ============================================
 router.post('/meta', async (req, res) => {
@@ -369,6 +470,7 @@ router.get('/health', (req, res) => {
     endpoints: {
       'POST /webhooks/whatsapp-lead': 'Crear leads desde bot de WhatsApp',
       'POST /webhooks/sheets-lead': 'Crear leads desde Google Sheets/Zapier',
+      'POST /webhooks/zapier-cristaldo': 'Crear leads para equipo Cristaldo (dinámico)',
       'POST /webhooks/meta': 'Recibir leads de Meta/Facebook',
       'POST /webhooks/whatsapp': 'Notificaciones de WhatsApp',
       'GET /webhooks/health': 'Health check'
