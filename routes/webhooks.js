@@ -29,43 +29,47 @@ router.post('/whatsapp-lead', async (req, res) => {
     }
 
     // Obtener siguiente vendedor (Round Robin)
+    // 🟢 VENDEDORES PARA LEADS DE BOT WHATSAPP
+    const VENDEDORES_BOT = [
+      { id: 69, name: 'Agostina Carrizo' },
+      { id: 71, name: 'Maximiliano Cristaldo' },
+      { id: 58, name: 'Morena Cabrera' },
+      { id: 53, name: 'Ignacio Muñoz' },
+      { id: 68, name: 'Matias Herlein' },
+      { id: 29, name: 'Florencia Sosa' },
+      { id: 72, name: 'Elias Benjamin Garcia' },
+      { id: 49, name: 'Marcos Gomez' },
+      { id: 73, name: 'Sheila Moreyra' }
+    ];
+
     let vendedorAsignado = null;
     let nombreVendedor = 'Sin asignar';
 
     try {
-      // Obtener todos los vendedores activos
-      const [vendedores] = await req.db.query(`
-        SELECT id, name 
-        FROM users 
-        WHERE role IN ('vendedor', 'owner') 
-        AND active = 1
-        ORDER BY id ASC
-      `);
-
-      if (vendedores.length > 0) {
-        // Obtener el último vendedor asignado
+      if (VENDEDORES_BOT.length > 0) {
+        // Obtener el último vendedor asignado de este grupo
+        const idsVendedores = VENDEDORES_BOT.map(v => v.id).join(',');
         const [ultimoLead] = await req.db.query(`
           SELECT assigned_to 
           FROM leads 
-          WHERE assigned_to IS NOT NULL 
-          AND equipo = ?
+          WHERE assigned_to IN (${idsVendedores})
           ORDER BY created_at DESC 
           LIMIT 1
-        `, [equipo || 'principal']);
+        `);
 
         let siguienteVendedor;
 
         if (ultimoLead.length === 0 || !ultimoLead[0].assigned_to) {
           // Si no hay leads previos, asignar al primer vendedor
-          siguienteVendedor = vendedores[0];
+          siguienteVendedor = VENDEDORES_BOT[0];
         } else {
           // Encontrar el índice del último vendedor
           const ultimoVendedorId = ultimoLead[0].assigned_to;
-          const indiceActual = vendedores.findIndex(v => v.id === ultimoVendedorId);
+          const indiceActual = VENDEDORES_BOT.findIndex(v => v.id === ultimoVendedorId);
           
           // Obtener el siguiente vendedor (circular)
-          const siguienteIndice = (indiceActual + 1) % vendedores.length;
-          siguienteVendedor = vendedores[siguienteIndice];
+          const siguienteIndice = (indiceActual === -1) ? 0 : (indiceActual + 1) % VENDEDORES_BOT.length;
+          siguienteVendedor = VENDEDORES_BOT[siguienteIndice];
         }
 
         vendedorAsignado = siguienteVendedor.id;
@@ -74,7 +78,9 @@ router.post('/whatsapp-lead', async (req, res) => {
       }
     } catch (error) {
       console.error('⚠️ Error en Round Robin:', error);
-      // Continuar sin vendedor asignado
+      // Fallback al primero
+      vendedorAsignado = VENDEDORES_BOT[0].id;
+      nombreVendedor = VENDEDORES_BOT[0].name;
     }
 
     // Crear historial inicial
@@ -190,13 +196,18 @@ router.post('/sheets-lead', async (req, res) => {
     }
 
     // ========================================
-    // ROUND ROBIN ENTRE 2 VENDEDORES ESPECÍFICOS
+    // ROUND ROBIN ENTRE VENDEDORES DE SHEETS
     // ========================================
     
-    // 🔴 CONFIGURA AQUÍ LOS IDs DE TUS 2 VENDEDORES
+    // 🔵 VENDEDORES PARA LEADS DE SHEETS
     const VENDEDORES_SHEETS = [
       { id: 42, name: 'Carlos Severich' },
-      { id: 55, name: 'Franco Molina' }  
+      { id: 55, name: 'Franco Molina' },
+      { id: 45, name: 'Sebastian Orrijola' },
+      { id: 57, name: 'Maia Heredia' },
+      { id: 64, name: 'Juan Froy' },
+      { id: 65, name: 'Carlos Benavidez' },
+      { id: 66, name: 'Agustin Diaz' }
     ];
     
     let vendedorAsignado = null;
@@ -307,20 +318,19 @@ router.post('/sheets-lead', async (req, res) => {
 });
 
 // ============================================
-// WEBHOOK ZAPIER - EQUIPO CRISTALDO (dinámico)
+// WEBHOOK ZAPIER - EQUIPO BOT/ZAPIER
 // ============================================
-let cristaldoIndex = 0;
 
 router.post('/zapier-cristaldo', async (req, res) => {
   try {
     // Verificar clave secreta
     const webhookKey = req.headers['x-webhook-key'];
     if (webhookKey !== 'fiat-zapier-cristaldo-2024') {
-      console.log('❌ Webhook Zapier Cristaldo: No autorizado');
+      console.log('❌ Webhook Zapier: No autorizado');
       return res.status(401).json({ error: 'No autorizado' });
     }
 
-    console.log('📩 Webhook Zapier Cristaldo recibido:', JSON.stringify(req.body, null, 2));
+    console.log('📩 Webhook Zapier recibido:', JSON.stringify(req.body, null, 2));
 
     const { nombre, telefono, modelo, formaPago, notas } = req.body;
 
@@ -332,36 +342,50 @@ router.post('/zapier-cristaldo', async (req, res) => {
       });
     }
 
-    // Buscar vendedores del equipo Cristaldo (reportsTo = 70) dinámicamente
-    const [vendedores] = await req.db.query(`
-      SELECT id, name 
-      FROM users 
-      WHERE reportsTo = 70
-        AND role = 'vendedor'
-        AND active = 1
-      ORDER BY id ASC
-    `);
-
-    if (vendedores.length === 0) {
-      console.error('❌ No hay vendedores activos en el equipo de Cristaldo');
-      return res.status(500).json({ error: 'No hay vendedores activos en el equipo' });
-    }
+    // 🟢 VENDEDORES PARA LEADS DE ZAPIER (mismo grupo que Bot WhatsApp)
+    const VENDEDORES_ZAPIER = [
+      { id: 69, name: 'Agostina Carrizo' },
+      { id: 71, name: 'Maximiliano Cristaldo' },
+      { id: 58, name: 'Morena Cabrera' },
+      { id: 53, name: 'Ignacio Muñoz' },
+      { id: 68, name: 'Matias Herlein' },
+      { id: 29, name: 'Florencia Sosa' },
+      { id: 72, name: 'Elias Benjamin Garcia' },
+      { id: 49, name: 'Marcos Gomez' },
+      { id: 73, name: 'Sheila Moreyra' }
+    ];
 
     // Round Robin
-    const vendedor = vendedores[cristaldoIndex % vendedores.length];
-    cristaldoIndex = (cristaldoIndex + 1) % vendedores.length;
+    const idsVendedores = VENDEDORES_ZAPIER.map(v => v.id).join(',');
+    const [ultimoLead] = await req.db.query(`
+      SELECT assigned_to 
+      FROM leads 
+      WHERE assigned_to IN (${idsVendedores})
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `);
 
-    const vendedorAsignado = vendedor.id;
-    const nombreVendedor = vendedor.name;
+    let siguienteVendedor;
+    if (ultimoLead.length === 0 || !ultimoLead[0].assigned_to) {
+      siguienteVendedor = VENDEDORES_ZAPIER[0];
+    } else {
+      const ultimoId = ultimoLead[0].assigned_to;
+      const indiceActual = VENDEDORES_ZAPIER.findIndex(v => v.id === ultimoId);
+      const siguienteIndice = (indiceActual === -1) ? 0 : (indiceActual + 1) % VENDEDORES_ZAPIER.length;
+      siguienteVendedor = VENDEDORES_ZAPIER[siguienteIndice];
+    }
 
-    console.log(`🎯 Zapier Cristaldo: Asignado a ${nombreVendedor} (ID: ${vendedorAsignado})`);
+    const vendedorAsignado = siguienteVendedor.id;
+    const nombreVendedor = siguienteVendedor.name;
+
+    console.log(`🎯 Zapier: Asignado a ${nombreVendedor} (ID: ${vendedorAsignado})`);
 
     // Crear historial inicial
     const historialInicial = JSON.stringify([
       {
         estado: 'nuevo',
         timestamp: new Date().toISOString(),
-        usuario: 'Zapier - Equipo Cristaldo'
+        usuario: 'Zapier'
       },
       {
         estado: `Asignado a ${nombreVendedor} (Round Robin)`,
@@ -387,13 +411,13 @@ router.post('/zapier-cristaldo', async (req, res) => {
         'zapier',
         new Date().toISOString().split('T')[0],
         vendedorAsignado,
-        'cristaldo',
+        'principal',
         historialInicial,
         vendedorAsignado
       ]
     );
 
-    console.log(`✅ Lead Zapier Cristaldo creado: ID ${result.insertId}, Vendedor: ${nombreVendedor}`);
+    console.log(`✅ Lead Zapier creado: ID ${result.insertId}, Vendedor: ${nombreVendedor}`);
 
     res.status(201).json({ 
       ok: true,
@@ -467,10 +491,14 @@ router.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
+    vendedores: {
+      sheets: ['Carlos Severich (42)', 'Franco Molina (55)', 'Sebastian Orrijola (45)', 'Maia Heredia (57)', 'Juan Froy (64)', 'Carlos Benavidez (65)', 'Agustin Diaz (66)'],
+      bot_zapier: ['Agostina Carrizo (69)', 'Maximiliano Cristaldo (71)', 'Morena Cabrera (58)', 'Ignacio Muñoz (53)', 'Matias Herlein (68)', 'Florencia Sosa (29)', 'Elias Garcia (72)', 'Marcos Gomez (49)', 'Sheila Moreyra (73)']
+    },
     endpoints: {
-      'POST /webhooks/whatsapp-lead': 'Crear leads desde bot de WhatsApp',
-      'POST /webhooks/sheets-lead': 'Crear leads desde Google Sheets/Zapier',
-      'POST /webhooks/zapier-cristaldo': 'Crear leads para equipo Cristaldo (dinámico)',
+      'POST /webhooks/whatsapp-lead': 'Crear leads desde bot de WhatsApp → Vendedores Bot/Zapier',
+      'POST /webhooks/sheets-lead': 'Crear leads desde Google Sheets → Vendedores Sheets',
+      'POST /webhooks/zapier-cristaldo': 'Crear leads desde Zapier → Vendedores Bot/Zapier',
       'POST /webhooks/meta': 'Recibir leads de Meta/Facebook',
       'POST /webhooks/whatsapp': 'Notificaciones de WhatsApp',
       'GET /webhooks/health': 'Health check'
