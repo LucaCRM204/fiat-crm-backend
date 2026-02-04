@@ -202,12 +202,10 @@ router.post('/sheets-lead', async (req, res) => {
     // 🔵 VENDEDORES PARA LEADS DE SHEETS
     const VENDEDORES_SHEETS = [
       { id: 42, name: 'Carlos Severich' },
-      { id: 55, name: 'Franco Molina' },
-      { id: 45, name: 'Sebastian Orrijola' },
-      { id: 57, name: 'Maia Heredia' },
-      { id: 64, name: 'Juan Froy' },
-      { id: 65, name: 'Carlos Benavidez' },
-      { id: 66, name: 'Agustin Diaz' }
+      { id: 73, name: 'Sheila Moreyra' },
+      { id: 53, name: 'Ignacio Muñoz' },
+      { id: 79, name: 'Alan Arevalo' },
+      { id: 78, name: 'Mariano Vieyra' }
     ];
     
     let vendedorAsignado = null;
@@ -492,7 +490,7 @@ router.get('/health', (req, res) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     vendedores: {
-      sheets: ['Carlos Severich (42)', 'Franco Molina (55)', 'Sebastian Orrijola (45)', 'Maia Heredia (57)', 'Juan Froy (64)', 'Carlos Benavidez (65)', 'Agustin Diaz (66)'],
+      sheets: ['Carlos Severich (42)', 'Sheila Moreyra (73)', 'Ignacio Muñoz (53)', 'Alan Arevalo (79)', 'Mariano Vieyra (78)'],
       bot_zapier: ['Agostina Carrizo (69)', 'Maximiliano Cristaldo (71)', 'Morena Cabrera (58)', 'Ignacio Muñoz (53)', 'Matias Herlein (68)', 'Florencia Sosa (29)', 'Elias Garcia (72)', 'Marcos Gomez (49)', 'Sheila Moreyra (73)']
     },
     endpoints: {
